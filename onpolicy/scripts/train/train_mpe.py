@@ -69,6 +69,10 @@ def main(args):
         print("u are choosing to use rmappo, we set use_recurrent_policy to be True")
         all_args.use_recurrent_policy = True
         all_args.use_naive_recurrent_policy = False
+    elif all_args.algorithm_name == "crmappo":
+        print("u are choosing to use crmappo, we set use_recurrent_policy to be True")
+        all_args.use_recurrent_policy = True
+        all_args.use_naive_recurrent_policy = False
     elif all_args.algorithm_name == "mappo":
         print("u are choosing to use mappo, we set use_recurrent_policy & use_naive_recurrent_policy to be False")
         all_args.use_recurrent_policy = False 
@@ -151,7 +155,11 @@ def main(args):
 
     # run experiments
     if all_args.share_policy:
-        from onpolicy.runner.shared.mpe_runner import MPERunner as Runner
+        if all_args.algorithm_name == 'crmappo':
+            from onpolicy.runner.shared.mpe_comm_runner import MPECommunicationRunner as Runner
+        else:
+            from onpolicy.runner.shared.mpe_runner import MPERunner as Runner
+
     else:
         from onpolicy.runner.separated.mpe_runner import MPERunner as Runner
 

@@ -19,9 +19,10 @@ class SharedReplayBuffer(object):
     :param obs_space: (gym.Space) observation space of agents.
     :param cent_obs_space: (gym.Space) centralized observation space of agents.
     :param act_space: (gym.Space) action space for agents.
+    :param act_space: (gym.Space) message space for agents. Will not be initialized if None.
     """
 
-    def __init__(self, args, num_agents, obs_space, cent_obs_space, act_space):
+    def __init__(self, args, num_agents, obs_space, cent_obs_space, act_space, message_space=None, keep_agent_dim=False):
         self.episode_length = args.episode_length
         self.n_rollout_threads = args.n_rollout_threads
         self.hidden_size = args.hidden_size
@@ -32,6 +33,7 @@ class SharedReplayBuffer(object):
         self._use_popart = args.use_popart
         self._use_valuenorm = args.use_valuenorm
         self._use_proper_time_limits = args.use_proper_time_limits
+        self.keep_agent_dim = keep_agent_dim
 
         obs_shape = get_shape_from_obs_space(obs_space)
         share_obs_shape = get_shape_from_obs_space(cent_obs_space)
@@ -74,10 +76,18 @@ class SharedReplayBuffer(object):
         self.bad_masks = np.ones_like(self.masks)
         self.active_masks = np.ones_like(self.masks)
 
+        if message_space is not None:
+            message_shape = get_shape_from_obs_space(message_space)
+            if type(message_shape[-1]) == list:
+                message_shape = message_shape[:1]
+            self.messages = np.zeros((self.episode_length + 1, self.n_rollout_threads, num_agents, *message_shape), dtype=np.float32)
+        else:
+            self.messages = None
+
         self.step = 0
 
     def insert(self, share_obs, obs, rnn_states_actor, rnn_states_critic, actions, action_log_probs,
-               value_preds, rewards, masks, bad_masks=None, active_masks=None, available_actions=None):
+               value_preds, rewards, masks, bad_masks=None, active_masks=None, available_actions=None, messages=None):
         """
         Insert data into the buffer.
         :param share_obs: (argparse.Namespace) arguments containing relevant model, policy, and env information.
@@ -108,11 +118,13 @@ class SharedReplayBuffer(object):
             self.active_masks[self.step + 1] = active_masks.copy()
         if available_actions is not None:
             self.available_actions[self.step + 1] = available_actions.copy()
+        if messages is not None:
+            self.messages[self.step + 1] = messages.copy()
 
         self.step = (self.step + 1) % self.episode_length
 
     def chooseinsert(self, share_obs, obs, rnn_states, rnn_states_critic, actions, action_log_probs,
-                     value_preds, rewards, masks, bad_masks=None, active_masks=None, available_actions=None):
+                     value_preds, rewards, masks, bad_masks=None, active_masks=None, available_actions=None, messages=None):
         """
         Insert data into the buffer. This insert function is used specifically for Hanabi, which is turn based.
         :param share_obs: (argparse.Namespace) arguments containing relevant model, policy, and env information.
@@ -143,6 +155,8 @@ class SharedReplayBuffer(object):
             self.active_masks[self.step] = active_masks.copy()
         if available_actions is not None:
             self.available_actions[self.step] = available_actions.copy()
+        if messages is not None:
+            self.messages[self.step] = messages.copy()
 
         self.step = (self.step + 1) % self.episode_length
 
@@ -157,6 +171,9 @@ class SharedReplayBuffer(object):
         self.active_masks[0] = self.active_masks[-1].copy()
         if self.available_actions is not None:
             self.available_actions[0] = self.available_actions[-1].copy()
+        # Is this necessary and correct? In which situations is this needed?
+        if self.messages is not None:
+            self.messages[0] = self.messages[-1].copy()
 
     def chooseafter_update(self):
         """Copy last timestep data to first index. This method is used for Hanabi."""
@@ -327,11 +344,11 @@ class SharedReplayBuffer(object):
             active_masks_batch = []
             old_action_log_probs_batch = []
             adv_targ = []
+            message_batch = []
 
             for offset in range(num_envs_per_batch):
                 ind = perm[start_ind + offset]
                 share_obs_batch.append(share_obs[:-1, ind])
-                obs_batch.append(obs[:-1, ind])
                 rnn_states_batch.append(rnn_states[0:1, ind])
                 rnn_states_critic_batch.append(rnn_states_critic[0:1, ind])
                 actions_batch.append(actions[:, ind])
@@ -400,9 +417,13 @@ class SharedReplayBuffer(object):
         if len(self.share_obs.shape) > 4:
             share_obs = self.share_obs[:-1].transpose(1, 2, 0, 3, 4, 5).reshape(-1, *self.share_obs.shape[3:])
             obs = self.obs[:-1].transpose(1, 2, 0, 3, 4, 5).reshape(-1, *self.obs.shape[3:])
+            if self.messages is not None:
+                messages = self.messages[:-1].transpose(1, 2, 0, 3, 4, 5).reshape(-1, *self.messages.shape[3:])
         else:
             share_obs = _cast(self.share_obs[:-1])
             obs = _cast(self.obs[:-1])
+            if self.messages is not None:
+                messages = _cast(self.messages[:-1])
 
         actions = _cast(self.actions)
         action_log_probs = _cast(self.action_log_probs)
@@ -433,6 +454,7 @@ class SharedReplayBuffer(object):
             masks_batch = []
             active_masks_batch = []
             old_action_log_probs_batch = []
+            messages_batch = []
             adv_targ = []
 
             for index in indices:
@@ -441,6 +463,8 @@ class SharedReplayBuffer(object):
                 # size [T+1 N M Dim]-->[T N M Dim]-->[N,M,T,Dim]-->[N*M*T,Dim]-->[L,Dim]
                 share_obs_batch.append(share_obs[ind:ind + data_chunk_length])
                 obs_batch.append(obs[ind:ind + data_chunk_length])
+                if self.messages is not None:
+                    messages_batch.append(messages[ind:ind + data_chunk_length])
                 actions_batch.append(actions[ind:ind + data_chunk_length])
                 if self.available_actions is not None:
                     available_actions_batch.append(available_actions[ind:ind + data_chunk_length])
@@ -459,6 +483,8 @@ class SharedReplayBuffer(object):
             # These are all from_numpys of size (L, N, Dim)           
             share_obs_batch = np.stack(share_obs_batch, axis=1)
             obs_batch = np.stack(obs_batch, axis=1)
+            if self.messages is not None:
+                messages_batch = np.stack(messages_batch, axis=1)
 
             actions_batch = np.stack(actions_batch, axis=1)
             if self.available_actions is not None:
@@ -477,6 +503,8 @@ class SharedReplayBuffer(object):
             # Flatten the (L, N, ...) from_numpys to (L * N, ...)
             share_obs_batch = _flatten(L, N, share_obs_batch)
             obs_batch = _flatten(L, N, obs_batch)
+            if self.messages is not None:
+                messages_batch = _flatten(L, N, messages_batch)
             actions_batch = _flatten(L, N, actions_batch)
             if self.available_actions is not None:
                 available_actions_batch = _flatten(L, N, available_actions_batch)
@@ -489,6 +517,11 @@ class SharedReplayBuffer(object):
             old_action_log_probs_batch = _flatten(L, N, old_action_log_probs_batch)
             adv_targ = _flatten(L, N, adv_targ)
 
-            yield share_obs_batch, obs_batch, rnn_states_batch, rnn_states_critic_batch, actions_batch,\
-                  value_preds_batch, return_batch, masks_batch, active_masks_batch, old_action_log_probs_batch,\
-                  adv_targ, available_actions_batch
+            if self.messages is not None:
+                yield share_obs_batch, obs_batch, rnn_states_batch, rnn_states_critic_batch, actions_batch,\
+                    value_preds_batch, return_batch, masks_batch, active_masks_batch, old_action_log_probs_batch,\
+                    adv_targ, available_actions_batch, messages_batch
+            else:
+                yield share_obs_batch, obs_batch, rnn_states_batch, rnn_states_critic_batch, actions_batch,\
+                    value_preds_batch, return_batch, masks_batch, active_masks_batch, old_action_log_probs_batch,\
+                    adv_targ, available_actions_batch

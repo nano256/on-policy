@@ -2,6 +2,7 @@ import wandb
 import os
 import numpy as np
 import torch
+from gym.spaces import Box
 from tensorboardX import SummaryWriter
 from onpolicy.utils.shared_buffer import SharedReplayBuffer
 
@@ -63,17 +64,29 @@ class Runner(object):
             if not os.path.exists(self.save_dir):
                 os.makedirs(self.save_dir)
 
-        from onpolicy.algorithms.r_mappo.r_mappo import R_MAPPO as TrainAlgo
-        from onpolicy.algorithms.r_mappo.algorithm.rMAPPOPolicy import R_MAPPOPolicy as Policy
-
         share_observation_space = self.envs.share_observation_space[0] if self.use_centralized_V else self.envs.observation_space[0]
 
-        # policy network
-        self.policy = Policy(self.all_args,
-                            self.envs.observation_space[0],
-                            share_observation_space,
-                            self.envs.action_space[0],
-                            device = self.device)
+        self.message_space = Box(-np.inf, np.inf, (32,))
+
+        if self.algorithm_name == 'crmappo':
+            from onpolicy.algorithms.r_mappo.cr_mappo import CR_MAPPO as TrainAlgo
+            from onpolicy.algorithms.r_mappo.algorithm.crMAPPOPolicy import CR_MAPPOPolicy as Policy
+             # policy network
+            self.policy = Policy(self.all_args,
+                                self.envs.observation_space[0],
+                                share_observation_space,
+                                self.envs.action_space[0],
+                                Box(-np.inf, np.inf, (32,)),
+                                device=self.device)
+        else:
+            from onpolicy.algorithms.r_mappo.r_mappo import R_MAPPO as TrainAlgo
+            from onpolicy.algorithms.r_mappo.algorithm.rMAPPOPolicy import R_MAPPOPolicy as Policy
+             # policy network
+            self.policy = Policy(self.all_args,
+                                self.envs.observation_space[0],
+                                share_observation_space,
+                                self.envs.action_space[0],
+                                device=self.device)
 
         if self.model_dir is not None:
             self.restore()
@@ -86,7 +99,9 @@ class Runner(object):
                                         self.num_agents,
                                         self.envs.observation_space[0],
                                         share_observation_space,
-                                        self.envs.action_space[0])
+                                        self.envs.action_space[0],
+                                        self.message_space
+                                        )
 
     def run(self):
         """Collect training data, perform training updates, and evaluate policy."""
