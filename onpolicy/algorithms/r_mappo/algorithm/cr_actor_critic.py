@@ -110,18 +110,62 @@ class CR_Actor(nn.Module):
         if active_masks is not None:
             active_masks = check(active_masks).to(**self.tpdv)
 
-        actor_features = self.base(torch.cat((obs, messages), -1))
+        # assert obs.dim() == 4, f'We assume input tensors having the dims (Seq, Batch, Agent, Features), only had {messages.dim()}.'
 
-        if self._use_naive_recurrent_policy or self._use_recurrent_policy:
-            actor_features, rnn_states = self.rnn(actor_features, rnn_states, masks)
+        if obs.size(0) == rnn_states.size(0):
+            ValueError("I guess this shouldn't happen...")
+        else:
+            # x is a (T, N, -1) tensor that has been flatten to (T * N, -1)
+            N = rnn_states.size(0)
+            T = int(obs.size(0) / N)
 
-        action_log_probs, dist_entropy = self.act.evaluate_actions(actor_features,
-                                                                   action, available_actions,
-                                                                   active_masks=
-                                                                   active_masks if self._use_policy_active_masks
-                                                                   else None)
+            # unflatten
+            obs = obs.view(T, N, obs.size(-1))
+            messages = messages.view(T, N, messages.size(-1))
+            action = action.view(T, N, action.size(-1))
+            available_actions = available_actions.view(T, N, available_actions.size(-1))
+            if active_masks is not None:
+                active_masks = active_masks.view(T, N, active_masks.size(-1))
+            masks = masks.view(T, N, masks.size(-1))
+
+            action_log_probs_batch = []
+            dist_entropy_batch = []
+            last_message = messages[0, ...]
+            # `rnn_states` contains the initial state of the RNN, no need for slicing.
+            last_rnn_state = rnn_states
+
+        for ts in range(obs.shape[0]):
+            actor_features = self.base(torch.cat((obs[ts, ...], last_message), -1))
+
+            if self._use_naive_recurrent_policy or self._use_recurrent_policy:
+                actor_features, last_rnn_state = self.rnn(actor_features, last_rnn_state, masks[ts, ...])
+
+            last_message = self.msg(actor_features)
+            action_log_probs, dist_entropy = self.act.evaluate_actions(actor_features,
+                                                                    action[ts, ...], available_actions[ts, ...],
+                                                                    active_masks=
+                                                                    active_masks[ts, ...] if self._use_policy_active_masks
+                                                                    else None)
+            action_log_probs_batch.append(action_log_probs)
+            dist_entropy_batch.append(dist_entropy)
+
+        action_log_probs = torch.stack(action_log_probs_batch).reshape((N * T, -1))
+        dist_entropy = torch.stack(dist_entropy_batch).mean()
 
         return action_log_probs, dist_entropy
+
+    def preprocess_messages(self, messages):
+        assert messages.dim() == 4, f'We assume messages having the dims (Seq, Batch, Agent, Features), only had {messages.dim()}.'
+        msg_shape = messages.shape
+        n_agents = messages.shape[2]
+        other_messages = []
+        for idx in range(n_agents):
+            mask = torch.ones_like(m)
+            mask[:, :, idx, :] = 0
+            mask = mask == 1
+            other_messages.append(messages[mask].reshape(*msg_shape[:2], 1, -1))
+        other_messages = torch.cat(other_messages, 2)
+        return other_messages
 
 
 class CR_Critic(nn.Module):

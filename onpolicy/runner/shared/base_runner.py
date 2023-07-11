@@ -100,7 +100,7 @@ class Runner(object):
                                         self.envs.observation_space[0],
                                         share_observation_space,
                                         self.envs.action_space[0],
-                                        self.message_space
+                                        self.message_space if self.algorithm_name == 'crmappo' else None
                                         )
 
     def run(self):
