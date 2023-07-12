@@ -18,7 +18,16 @@ class CR_Actor(nn.Module):
     :param action_space: (gym.Space) action space.
     :param device: (torch.device) specifies the device to run on (cpu/gpu).
     """
-    def __init__(self, args, obs_space, action_space, message_space, device=torch.device("cpu")):
+
+    def __init__(
+        self,
+        args,
+        obs_space,
+        action_space,
+        message_space,
+        n_agents,
+        device=torch.device("cpu"),
+    ):
         super(CR_Actor, self).__init__()
         self.hidden_size = args.hidden_size
 
@@ -29,6 +38,7 @@ class CR_Actor(nn.Module):
         self._use_recurrent_policy = args.use_recurrent_policy
         self._recurrent_N = args.recurrent_N
         self._message_N = 2
+        self.n_agents = n_agents
         self._message_size = int(np.product(message_space.shape))
         self.tpdv = dict(dtype=torch.float32, device=device)
 
@@ -36,24 +46,45 @@ class CR_Actor(nn.Module):
         msg_shape = get_shape_from_obs_space(message_space)
 
         # This model can only work with 1D inputs
-        assert len(obs_shape) == 1, f'Observation shape must be 1D, but has {len(obs_shape)} dimensions.'
-        assert len(msg_shape) == 1, f'Message shape must be 1D, but has {len(msg_shape)} dimensions.'
-        self.base = MLPBase(args, (obs_shape[0] + msg_shape[0],))
+        assert (
+            len(obs_shape) == 1
+        ), f"Observation shape must be 1D, but has {len(obs_shape)} dimensions."
+        assert (
+            len(msg_shape) == 1
+        ), f"Message shape must be 1D, but has {len(msg_shape)} dimensions."
+        self.base = MLPBase(args, (obs_shape[0] + msg_shape[0] * (self.n_agents - 1),))
 
         if self._use_naive_recurrent_policy or self._use_recurrent_policy:
-            self.rnn = RNNLayer(self.hidden_size, self.hidden_size, self._recurrent_N, self._use_orthogonal)
+            self.rnn = RNNLayer(
+                self.hidden_size,
+                self.hidden_size,
+                self._recurrent_N,
+                self._use_orthogonal,
+            )
 
-        self.act = ACTLayer(action_space, self.hidden_size, self._use_orthogonal, self._gain)
+        self.act = ACTLayer(
+            action_space, self.hidden_size, self._use_orthogonal, self._gain
+        )
 
         msg_layers = []
         for _ in range(self._message_N):
-            msg_layers.extend([nn.Linear(self.hidden_size, self.hidden_size), nn.ReLU()])
+            msg_layers.extend(
+                [nn.Linear(self.hidden_size, self.hidden_size), nn.ReLU()]
+            )
         msg_layers.append(nn.Linear(self.hidden_size, self._message_size))
         self.msg = nn.Sequential(*msg_layers)
 
         self.to(device)
 
-    def forward(self, obs, messages, rnn_states, masks, available_actions=None, deterministic=False):
+    def forward(
+        self,
+        obs,
+        messages,
+        rnn_states,
+        masks,
+        available_actions=None,
+        deterministic=False,
+    ):
         """
         Compute actions from the given inputs.
         :param obs: (np.ndarray / torch.Tensor) observation inputs into network.
@@ -73,18 +104,39 @@ class CR_Actor(nn.Module):
         masks = check(masks).to(**self.tpdv)
         if available_actions is not None:
             available_actions = check(available_actions).to(**self.tpdv)
+            available_actions = available_actions.reshape(
+                (-1, available_actions.size(-1))
+            )
+        masks = masks.reshape((-1, masks.size(-1)))
+        rnn_states = rnn_states.reshape((-1, *rnn_states.shape[2:]))
 
-        actor_features = self.base(torch.cat((obs, messages), -1))
+        # We want the other agents' messages to be included in the agent's observations
+        other_messages = self.preprocess_messages(messages)
+        input = torch.cat((obs, other_messages), -1)
+        input = input.reshape((-1, input.size(-1)))
+
+        actor_features = self.base(input)
 
         if self._use_naive_recurrent_policy or self._use_recurrent_policy:
             actor_features, rnn_states = self.rnn(actor_features, rnn_states, masks)
 
-        actions, action_log_probs = self.act(actor_features, available_actions, deterministic)
+        actions, action_log_probs = self.act(
+            actor_features, available_actions, deterministic
+        )
         messages = self.msg(actor_features)
 
         return actions, action_log_probs, messages, rnn_states
 
-    def evaluate_actions(self, obs, messages, rnn_states, action, masks, available_actions=None, active_masks=None):
+    def evaluate_actions(
+        self,
+        obs,
+        messages,
+        rnn_states,
+        action,
+        masks,
+        available_actions=None,
+        active_masks=None,
+    ):
         """
         Compute log probability and entropy of given actions.
         :param obs: (torch.Tensor) observation inputs into network.
@@ -106,7 +158,6 @@ class CR_Actor(nn.Module):
         masks = check(masks).to(**self.tpdv)
         if available_actions is not None:
             available_actions = check(available_actions).to(**self.tpdv)
-
         if active_masks is not None:
             active_masks = check(active_masks).to(**self.tpdv)
 
@@ -115,56 +166,83 @@ class CR_Actor(nn.Module):
         if obs.size(0) == rnn_states.size(0):
             ValueError("I guess this shouldn't happen...")
         else:
-            # x is a (T, N, -1) tensor that has been flatten to (T * N, -1)
-            N = rnn_states.size(0)
-            T = int(obs.size(0) / N)
-
-            # unflatten
-            obs = obs.view(T, N, obs.size(-1))
-            messages = messages.view(T, N, messages.size(-1))
-            action = action.view(T, N, action.size(-1))
-            available_actions = available_actions.view(T, N, available_actions.size(-1))
+            dims = masks.shape[:-1]
+            # Get rid of the actor dimension where we don't need it anymore
+            action = action.reshape((action.size(0), -1, action.size(-1)))
+            masks = masks.reshape((masks.size(0), -1, masks.size(-1)))
+            obs = obs.reshape((obs.size(0), -1, obs.size(-1)))
+            if available_actions is not None:
+                available_actions = available_actions.reshape(
+                    (available_actions.size(0), -1, available_actions.size(-1))
+                )
             if active_masks is not None:
-                active_masks = active_masks.view(T, N, active_masks.size(-1))
-            masks = masks.view(T, N, masks.size(-1))
+                active_masks = active_masks.reshape(
+                    (active_masks.size(0), -1, active_masks.size(-1))
+                )
 
             action_log_probs_batch = []
             dist_entropy_batch = []
-            last_message = messages[0, ...]
-            # `rnn_states` contains the initial state of the RNN, no need for slicing.
-            last_rnn_state = rnn_states
+            last_message = self.preprocess_messages(messages)
+            last_message = last_message.reshape(-1, last_message.size(-1))
+            # `rnn_states` contains the initial state of the RNN, no need for slicing
+            last_rnn_state = rnn_states.reshape((-1, *rnn_states.shape[2:]))
 
         for ts in range(obs.shape[0]):
             actor_features = self.base(torch.cat((obs[ts, ...], last_message), -1))
 
             if self._use_naive_recurrent_policy or self._use_recurrent_policy:
-                actor_features, last_rnn_state = self.rnn(actor_features, last_rnn_state, masks[ts, ...])
+                actor_features, last_rnn_state = self.rnn(
+                    actor_features, last_rnn_state, masks[ts, ...]
+                )
 
-            last_message = self.msg(actor_features)
-            action_log_probs, dist_entropy = self.act.evaluate_actions(actor_features,
-                                                                    action[ts, ...], available_actions[ts, ...],
-                                                                    active_masks=
-                                                                    active_masks[ts, ...] if self._use_policy_active_masks
-                                                                    else None)
+            # The messages have to be redistributed to the different agents
+            last_message = self.msg(actor_features).reshape(messages.shape)
+            last_message = self.preprocess_messages(last_message)
+            last_message = last_message.reshape((-1, last_message.size(-1)))
+
+            action_log_probs, dist_entropy = self.act.evaluate_actions(
+                actor_features,
+                action[ts, ...],
+                available_actions[ts, ...],
+                active_masks=active_masks[ts, ...]
+                if self._use_policy_active_masks
+                else None,
+            )
             action_log_probs_batch.append(action_log_probs)
             dist_entropy_batch.append(dist_entropy)
 
-        action_log_probs = torch.stack(action_log_probs_batch).reshape((N * T, -1))
+        action_log_probs = torch.stack(action_log_probs_batch).reshape((*dims, 1))
         dist_entropy = torch.stack(dist_entropy_batch).mean()
 
         return action_log_probs, dist_entropy
 
     def preprocess_messages(self, messages):
-        assert messages.dim() == 4, f'We assume messages having the dims (Seq, Batch, Agent, Features), only had {messages.dim()}.'
-        msg_shape = messages.shape
-        n_agents = messages.shape[2]
-        other_messages = []
-        for idx in range(n_agents):
-            mask = torch.ones_like(m)
-            mask[:, :, idx, :] = 0
-            mask = mask == 1
-            other_messages.append(messages[mask].reshape(*msg_shape[:2], 1, -1))
-        other_messages = torch.cat(other_messages, 2)
+        if messages.dim() == 3:
+            # We assume messages having the dims (Batch, Agent, Features)
+            msg_shape = messages.shape
+            n_agents = messages.shape[1]
+            other_messages = []
+            for idx in range(n_agents):
+                mask = torch.ones_like(messages)
+                mask[:, idx, :] = 0
+                mask = mask == 1
+                other_messages.append(messages[mask].reshape(msg_shape[0], 1, -1))
+            other_messages = torch.cat(other_messages, 1)
+        elif messages.dim() == 4:
+            # We assume messages having the dims (Seq, Batch, Agent, Features)
+            msg_shape = messages.shape
+            n_agents = messages.shape[2]
+            other_messages = []
+            for idx in range(n_agents):
+                mask = torch.ones_like(messages)
+                mask[:, :, idx, :] = 0
+                mask = mask == 1
+                other_messages.append(messages[mask].reshape(*msg_shape[:2], 1, -1))
+            other_messages = torch.cat(other_messages, 2)
+        else:
+            ValueError(
+                f"Input expected to hva 3 or 4 dimensions, got {messages.dim()} instead."
+            )
         return other_messages
 
 
@@ -176,6 +254,7 @@ class CR_Critic(nn.Module):
     :param cent_obs_space: (gym.Space) (centralized) observation space.
     :param device: (torch.device) specifies the device to run on (cpu/gpu).
     """
+
     def __init__(self, args, cent_obs_space, device=torch.device("cpu")):
         super(CR_Critic, self).__init__()
         self.hidden_size = args.hidden_size
@@ -185,14 +264,21 @@ class CR_Critic(nn.Module):
         self._recurrent_N = args.recurrent_N
         self._use_popart = args.use_popart
         self.tpdv = dict(dtype=torch.float32, device=device)
-        init_method = [nn.init.xavier_uniform_, nn.init.orthogonal_][self._use_orthogonal]
+        init_method = [nn.init.xavier_uniform_, nn.init.orthogonal_][
+            self._use_orthogonal
+        ]
 
         cent_obs_shape = get_shape_from_obs_space(cent_obs_space)
         base = CNNBase if len(cent_obs_shape) == 3 else MLPBase
         self.base = base(args, cent_obs_shape)
 
         if self._use_naive_recurrent_policy or self._use_recurrent_policy:
-            self.rnn = RNNLayer(self.hidden_size, self.hidden_size, self._recurrent_N, self._use_orthogonal)
+            self.rnn = RNNLayer(
+                self.hidden_size,
+                self.hidden_size,
+                self._recurrent_N,
+                self._use_orthogonal,
+            )
 
         def init_(m):
             return init(m, init_method, lambda x: nn.init.constant_(x, 0))
@@ -217,6 +303,12 @@ class CR_Critic(nn.Module):
         cent_obs = check(cent_obs).to(**self.tpdv)
         rnn_states = check(rnn_states).to(**self.tpdv)
         masks = check(masks).to(**self.tpdv)
+
+        dims = masks.shape[:-1]
+        rnn_dims = rnn_states.shape
+        cent_obs = cent_obs.reshape((-1, cent_obs.size(-1)))
+        rnn_states = rnn_states.reshape((-1, *rnn_states.shape[2:]))
+        masks = masks.reshape((-1, masks.size(-1)))
 
         critic_features = self.base(cent_obs)
         if self._use_naive_recurrent_policy or self._use_recurrent_policy:
