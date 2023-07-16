@@ -1,6 +1,8 @@
 import time
 import numpy as np
 import torch
+from torch import nn
+import torch.nn.functional as F
 from onpolicy.runner.shared.base_runner import Runner
 import wandb
 import imageio
@@ -126,6 +128,16 @@ class MPECommunicationRunner(Runner):
 
         self.buffer.share_obs[0] = share_obs.copy()
         self.buffer.obs[0] = obs.copy()
+
+        if self.all_args.model == "is":
+            self.pretrain_world_model(
+                self.trainer.policy.actor,
+                self.envs,
+                self.num_agents,
+                10000,
+                1000,
+                10,
+            )
 
     @torch.no_grad()
     def collect(self, step):
@@ -398,3 +410,108 @@ class MPECommunicationRunner(Runner):
                 all_frames,
                 duration=self.all_args.ifi,
             )
+
+    def pretrain_world_model(
+        self, model, env, n_agents, n_samples, batch_size, n_episodes
+    ):
+        # Since each env step gives the number of agents in samples
+        samples_per_env_step = n_agents * env.num_envs
+        obs_batch = []
+        action_batch = []
+        # env reset only gives back the first observation
+        obs = env.reset()
+        obs_rollout = [obs]
+        action_rollout = []
+        n_actions = env.action_space[0].n
+        actions_per_step = np.product(obs.shape[:-1])
+        obs_predictor = model.observation_predictor
+        collected_samples = 0
+        # Collect observations from random trajectories
+        while True:
+            random_actions = torch.randint(n_actions, (actions_per_step,)).reshape(
+                (*obs.shape[:-1], 1)
+            )
+            random_actions = F.one_hot(random_actions, n_actions).squeeze()
+            obs, _, dones, _ = env.step(random_actions)
+            obs_rollout.append(obs)
+            action_rollout.append(random_actions.numpy())
+            if np.any(dones):
+                obs_batch.append(obs_rollout)
+                action_batch.append(action_rollout)
+                collected_samples += len(action_rollout) * samples_per_env_step
+                if collected_samples >= n_samples:
+                    break
+                obs_rollout = [env.reset()]
+                action_rollout = []
+
+        obs_batch = torch.Tensor(np.array(obs_batch))
+        action_batch = torch.Tensor(np.array(action_batch))
+        action_batch = self._preprocess_actions(action_batch)
+        # Take all obs except the last of each episode as the input data
+        initial_obs = obs_batch[:, :-1, ...]
+        x_train = torch.cat((initial_obs, action_batch), -1)
+        x_train = x_train.reshape(-1, x_train.size(-1))[:n_samples]
+        # Take all consecutive obs of x as our labels
+        y_train = obs_batch[:, 1:, ...].reshape(-1, obs_batch.size(-1))[:n_samples]
+        initial_obs_train = initial_obs.reshape(-1, obs_batch.size(-1))[:n_samples]
+
+        n_batches = n_samples // batch_size
+
+        optim = torch.optim.Adam(obs_predictor.parameters())
+        loss_fn = nn.MSELoss()
+        steps = 0
+        for _ in range(n_episodes):
+            samples = torch.randperm(n_samples)
+            for n_batch in range(n_batches):
+                optim.zero_grad()
+                idx = samples[batch_size * n_batch : batch_size * (n_batch + 1)]
+                x = x_train[idx]
+                x_obs = initial_obs_train[idx]
+                y = y_train[idx]
+                # The observation predictor infers the the difference between current and next observation. Therefore we add the current obs to the output.
+                y_pred = obs_predictor(x) + x_obs
+                loss = loss_fn(y_pred, y)
+                loss.backward()
+                optim.step()
+                # TODO: Replace with proper tensorboard log
+                print(f"WM obs. predictor loss at step {steps}: {loss:.4f}")
+                steps += batch_size
+
+    def _preprocess_actions(self, actions):
+        if actions.dim() == 5:
+            # We assume actions having the dims (Rollout, Sequence, Batch, Agent, Features)
+            action_shape = actions.shape
+            n_agents = actions.size(3)
+            own_action = []
+            other_actions = []
+            for idx in range(n_agents):
+                mask = torch.ones_like(actions)
+                mask[..., idx, :] = 0
+                mask = mask == 1
+                other_actions.append(actions[mask].reshape(*action_shape[:3], 1, -1))
+                # We want to keep the agent dim
+                own_action.append(actions[..., idx : idx + 1, :])
+            other_actions = torch.cat(other_actions, 3)
+            own_action = torch.cat(own_action, 3)
+            all_actions = torch.cat((own_action, other_actions), -1)
+        elif actions.dim() == 4:
+            # We assume actions having the dims (Seq, Batch, Agent, Features)
+            action_shape = actions.shape
+            n_agents = actions.shape[2]
+            own_action = []
+            other_actions = []
+            for idx in range(n_agents):
+                mask = torch.ones_like(actions)
+                mask[:, :, idx, :] = 0
+                mask = mask == 1
+                other_actions.append(actions[mask].reshape(*action_shape[:2], 1, -1))
+                # We want to keep the agent dim
+                own_action.append(actions[..., idx : idx + 1, :])
+            other_actions = torch.cat(other_actions, 2)
+            own_action = torch.cat(own_action, 2)
+            all_actions = torch.cat((own_action, other_actions), -1)
+        else:
+            ValueError(
+                f"Input expected to have 4 or 5 dimensions, got {actions.dim()} instead."
+            )
+        return all_actions

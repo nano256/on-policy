@@ -1,9 +1,14 @@
 import numpy as np
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from onpolicy.utils.util import get_gard_norm, huber_loss, mse_loss
 from onpolicy.utils.valuenorm import ValueNorm
 from onpolicy.algorithms.utils.util import check
+
+from onpolicy.algorithms.r_mappo.algorithm.intention_sharing import (
+    IntentionSharingModel,
+)
 
 
 class CR_MAPPO:
@@ -260,6 +265,9 @@ class CR_MAPPO:
                     imp_weights,
                 ) = self.ppo_update(sample, update_actor)
 
+                if isinstance(self.policy.actor, IntentionSharingModel):
+                    self.world_model_update(sample)
+
                 train_info["value_loss"] += value_loss.item()
                 train_info["policy_loss"] += policy_loss.item()
                 train_info["dist_entropy"] += dist_entropy.item()
@@ -274,6 +282,59 @@ class CR_MAPPO:
 
         return train_info
 
+    def world_model_update(self, sample):
+        (
+            share_obs_batch,
+            obs_batch,
+            rnn_states_batch,
+            rnn_states_critic_batch,
+            actions_batch,
+            value_preds_batch,
+            return_batch,
+            masks_batch,
+            active_masks_batch,
+            old_action_log_probs_batch,
+            adv_targ,
+            available_actions_batch,
+            messages_batch,
+        ) = sample
+
+        intitial_obs = check(obs_batch[:-1]).to(**self.tpdv)
+        next_obs = check(obs_batch[1:]).to(**self.tpdv)
+        actions = check(actions_batch[:-1]).to(
+            dtype=torch.int64, device=self.tpdv["device"]
+        )
+        one_hot_actions = F.one_hot(actions, self.policy.actor.action_size).squeeze()
+        obs_actions = self._preprocess_actions(one_hot_actions).float()
+        x_obs = torch.cat((intitial_obs, obs_actions), -1)
+        # Because we use CEL, we need the action labels as classes, not one-hots
+        other_actions = self._preprocess_actions(actions, include_own_action=False)
+
+        x_obs = x_obs.reshape(-1, x_obs.size(-1))
+        next_obs = next_obs.reshape(-1, next_obs.size(-1))
+        intitial_obs = intitial_obs.reshape(-1, intitial_obs.size(-1))
+        other_actions = other_actions.reshape(-1)
+
+        # Train observation predictor
+        self.policy.obs_predictor_optimizer.zero_grad()
+        loss_fn = nn.MSELoss()
+        # The observation predictor infers the the difference between current and next observation. Therefore we add the current obs to the output.
+        y_pred = self.policy.actor.observation_predictor(x_obs) + intitial_obs
+        loss = loss_fn(y_pred, next_obs)
+        loss.backward()
+        self.policy.obs_predictor_optimizer.step()
+        # TODO: Do proper tensorboard log
+
+        # Train action predictor
+        self.policy.act_predictor_optimizer.zero_grad()
+        loss_fn = nn.CrossEntropyLoss()
+        y_pred = self.policy.actor.action_predictor(intitial_obs)
+        y_pred = y_pred.reshape((-1, self.policy.actor.action_size))
+        loss = loss_fn(y_pred, other_actions)
+        loss.backward()
+        self.policy.act_predictor_optimizer.step()
+        # TODO: Do proper tensorboard log
+
     def prep_training(self):
         self.policy.actor.train()
         self.policy.critic.train()
@@ -281,3 +342,44 @@ class CR_MAPPO:
     def prep_rollout(self):
         self.policy.actor.eval()
         self.policy.critic.eval()
+
+    def _preprocess_actions(self, actions, include_own_action=True):
+        if actions.dim() == 5:
+            # We assume actions having the dims (Rollout, Seq, Batch, Agent, Features)
+            action_shape = actions.shape
+            n_agents = actions.size(3)
+            own_action = []
+            other_actions = []
+            for idx in range(n_agents):
+                mask = torch.ones_like(actions)
+                mask[..., idx, :] = 0
+                mask = mask == 1
+                other_actions.append(actions[mask].reshape(*action_shape[:3], 1, -1))
+                # We want to keep the agent dim
+                own_action.append(actions[..., idx : idx + 1, :])
+            other_actions = torch.cat(other_actions, 3)
+            own_action = torch.cat(own_action, 3)
+        elif actions.dim() == 4:
+            # We assume actions having the dims (Seq, Batch, Agent, Features)
+            action_shape = actions.shape
+            n_agents = actions.shape[2]
+            own_action = []
+            other_actions = []
+            for idx in range(n_agents):
+                mask = torch.ones_like(actions)
+                mask[:, :, idx, :] = 0
+                mask = mask == 1
+                other_actions.append(actions[mask].reshape(*action_shape[:2], 1, -1))
+                # We want to keep the agent dim
+                own_action.append(actions[..., idx : idx + 1, :])
+            other_actions = torch.cat(other_actions, 2)
+            own_action = torch.cat(own_action, 2)
+        else:
+            ValueError(
+                f"Input expected to have 4 or 5 dimensions, got {actions.dim()} instead."
+            )
+        if include_own_action:
+            all_actions = torch.cat((own_action, other_actions), -1)
+        else:
+            all_actions = other_actions
+        return all_actions

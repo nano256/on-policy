@@ -1,5 +1,8 @@
 import torch
 from onpolicy.algorithms.r_mappo.algorithm.cr_actor_critic import CR_Actor, CR_Critic
+from onpolicy.algorithms.r_mappo.algorithm.intention_sharing import (
+    IntentionSharingModel,
+)
 from onpolicy.utils.util import update_linear_schedule
 
 
@@ -35,14 +38,37 @@ class CR_MAPPOPolicy:
         self.share_obs_space = cent_obs_space
         self.act_space = act_space
         self.message_space = message_space
-        self.actor = CR_Actor(
-            args,
-            self.obs_space,
-            self.act_space,
-            self.message_space,
-            self.n_agents,
-            self.device,
-        )
+
+        if args.model == "nn":
+            self.actor = CR_Actor(
+                args,
+                self.obs_space,
+                self.act_space,
+                self.message_space,
+                self.n_agents,
+                self.device,
+            )
+        elif args.model == "is":
+            self.actor = IntentionSharingModel(
+                args,
+                self.obs_space,
+                self.act_space,
+                self.message_space,
+                self.n_agents,
+                self.device,
+            )
+            self.obs_predictor_optimizer = torch.optim.Adam(
+                self.actor.observation_predictor.parameters(),
+                lr=self.lr,
+                eps=self.opti_eps,
+                weight_decay=self.weight_decay,
+            )
+            self.act_predictor_optimizer = torch.optim.Adam(
+                self.actor.observation_predictor.parameters(),
+                lr=self.lr,
+                eps=self.opti_eps,
+                weight_decay=self.weight_decay,
+            )
         self.critic = CR_Critic(args, self.share_obs_space, self.device)
 
         self.actor_optimizer = torch.optim.Adam(
