@@ -116,6 +116,15 @@ class MPECommunicationRunner(Runner):
                 self.eval(total_num_steps)
 
     def warmup(self):
+        if self.all_args.model == "is" and self.all_args.pretrain_world_model:
+            self.pretrain_world_model(
+                self.trainer.policy.actor,
+                self.envs,
+                self.num_agents,
+                self.all_args.pretrain_wm_n_samples,
+                self.all_args.pretrain_wm_batch_size,
+                self.all_args.pretrain_wm_n_episodes,
+            )
         # reset env
         obs = self.envs.reset()
 
@@ -128,16 +137,6 @@ class MPECommunicationRunner(Runner):
 
         self.buffer.share_obs[0] = share_obs.copy()
         self.buffer.obs[0] = obs.copy()
-
-        if self.all_args.model == "is":
-            self.pretrain_world_model(
-                self.trainer.policy.actor,
-                self.envs,
-                self.num_agents,
-                10000,
-                1000,
-                10,
-            )
 
     @torch.no_grad()
     def collect(self, step):
@@ -156,6 +155,7 @@ class MPECommunicationRunner(Runner):
             self.buffer.rnn_states[step],
             self.buffer.rnn_states_critic[step],
             self.buffer.masks[step],
+            step,
         )
         # [self.envs, agents, dim]
         values = np.array(np.split(_t2n(value), self.n_rollout_threads))
@@ -475,6 +475,7 @@ class MPECommunicationRunner(Runner):
                 optim.step()
                 # TODO: Replace with proper tensorboard log
                 print(f"WM obs. predictor loss at step {steps}: {loss:.4f}")
+                self.log_train({"wm_obs_pred_pretrain_loss": loss.item()}, steps)
                 steps += batch_size
 
     def _preprocess_actions(self, actions):

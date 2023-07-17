@@ -127,6 +127,7 @@ class CR_MAPPO:
             adv_targ,
             available_actions_batch,
             messages_batch,
+            steps_batch,
         ) = sample
 
         old_action_log_probs_batch = check(old_action_log_probs_batch).to(**self.tpdv)
@@ -145,6 +146,7 @@ class CR_MAPPO:
             rnn_states_critic_batch,
             actions_batch,
             masks_batch,
+            steps_batch,
             available_actions_batch,
             active_masks_batch,
         )
@@ -240,6 +242,9 @@ class CR_MAPPO:
         train_info["actor_grad_norm"] = 0
         train_info["critic_grad_norm"] = 0
         train_info["ratio"] = 0
+        if isinstance(self.policy.actor, IntentionSharingModel):
+            train_info["wm_act_pred_loss"] = 0
+            train_info["wm_obs_pred_loss"] = 0
 
         for _ in range(self.ppo_epoch):
             if self._use_recurrent_policy:
@@ -266,7 +271,7 @@ class CR_MAPPO:
                 ) = self.ppo_update(sample, update_actor)
 
                 if isinstance(self.policy.actor, IntentionSharingModel):
-                    self.world_model_update(sample)
+                    wm_act_pred_loss, wm_obs_pred_loss = self.world_model_update(sample)
 
                 train_info["value_loss"] += value_loss.item()
                 train_info["policy_loss"] += policy_loss.item()
@@ -274,6 +279,9 @@ class CR_MAPPO:
                 train_info["actor_grad_norm"] += actor_grad_norm
                 train_info["critic_grad_norm"] += critic_grad_norm
                 train_info["ratio"] += imp_weights.mean()
+                if isinstance(self.policy.actor, IntentionSharingModel):
+                    train_info["wm_act_pred_loss"] += wm_act_pred_loss.item()
+                    train_info["wm_obs_pred_loss"] += wm_obs_pred_loss.item()
 
         num_updates = self.ppo_epoch * self.num_mini_batch
 
@@ -284,19 +292,20 @@ class CR_MAPPO:
 
     def world_model_update(self, sample):
         (
-            share_obs_batch,
+            _,
             obs_batch,
-            rnn_states_batch,
-            rnn_states_critic_batch,
+            _,
+            _,
             actions_batch,
-            value_preds_batch,
-            return_batch,
-            masks_batch,
-            active_masks_batch,
-            old_action_log_probs_batch,
-            adv_targ,
-            available_actions_batch,
-            messages_batch,
+            _,
+            _,
+            _,
+            _,
+            _,
+            _,
+            _,
+            _,
+            _,
         ) = sample
 
         intitial_obs = check(obs_batch[:-1]).to(**self.tpdv)
@@ -320,20 +329,20 @@ class CR_MAPPO:
         loss_fn = nn.MSELoss()
         # The observation predictor infers the the difference between current and next observation. Therefore we add the current obs to the output.
         y_pred = self.policy.actor.observation_predictor(x_obs) + intitial_obs
-        loss = loss_fn(y_pred, next_obs)
-        loss.backward()
+        obs_pred_loss = loss_fn(y_pred, next_obs)
+        obs_pred_loss.backward()
         self.policy.obs_predictor_optimizer.step()
-        # TODO: Do proper tensorboard log
 
         # Train action predictor
         self.policy.act_predictor_optimizer.zero_grad()
         loss_fn = nn.CrossEntropyLoss()
         y_pred = self.policy.actor.action_predictor(intitial_obs)
         y_pred = y_pred.reshape((-1, self.policy.actor.action_size))
-        loss = loss_fn(y_pred, other_actions)
-        loss.backward()
+        act_pred_loss = loss_fn(y_pred, other_actions)
+        act_pred_loss.backward()
         self.policy.act_predictor_optimizer.step()
-        # TODO: Do proper tensorboard log
+
+        return act_pred_loss, obs_pred_loss
 
     def prep_training(self):
         self.policy.actor.train()

@@ -28,7 +28,9 @@ class MLP(nn.Module):
 
 
 class AttentionModule(nn.Module):
-    def __init__(self, embed_dim, qdim=None, kdim=None, vdim=None):
+    def __init__(
+        self, embed_dim, qdim=None, kdim=None, vdim=None, value_transform="learned"
+    ):
         nn.Module.__init__(self)
         self.embed_dim = embed_dim
         self.qdim = qdim if qdim is not None else embed_dim
@@ -37,7 +39,15 @@ class AttentionModule(nn.Module):
 
         self.q_weights = nn.Linear(self.qdim, embed_dim)
         self.k_weights = nn.Linear(self.kdim, embed_dim)
-        self.v_weights = nn.Linear(self.vdim, embed_dim)
+        if value_transform == "learned":
+            self.v_weights = nn.Linear(self.vdim, embed_dim)
+        elif value_transform == "identity":
+            assert (
+                embed_dim == self.vdim
+            ), "embed and v dim must be identical for unity mod of value transform."
+            self.v_weights = nn.Identity()
+        else:
+            ValueError(f'"{value_transform}" is not a valid value transformation mode.')
 
     def forward(self, input_q, input_k, input_v):
         q = self.q_weights(input_q)
@@ -101,6 +111,7 @@ class IntentionSharingModel(nn.Module):
         self._recurrent_N = args.recurrent_N
         self.intention_aggregation = args.intention_aggregation
         self.imagined_traj_len = args.imagined_traj_len
+        self.communication_interval = args.communication_interval
         self.group_size = n_agents
 
         self.tpdv = dict(dtype=torch.float32, device=device)
@@ -147,12 +158,20 @@ class IntentionSharingModel(nn.Module):
             self.num_hidden,
         )
 
-        self.attention_module = AttentionModule(
-            embed_dim=self.message_size,
-            qdim=(self.group_size - 1) * self.message_size,
-            kdim=self.obs_size + self.action_size,
-            vdim=self.obs_size + self.action_size,
-        )
+        if self.intention_aggregation == "attention":
+            self.attention_module = AttentionModule(
+                embed_dim=self.message_size,
+                qdim=(self.group_size - 1) * self.message_size,
+                kdim=self.obs_size + self.action_size,
+                vdim=self.obs_size + self.action_size,
+                value_transform=args.msg_value_transformation,
+            )
+        elif self.intention_aggregation == "mean":
+            self.attention_module = lambda t: torch.mean(t, 0)
+        else:
+            ValueError(
+                f'"{self.intention_aggregation}" is not a valid intention aggregation mode.'
+            )
 
     def forward(
         self,
@@ -160,6 +179,7 @@ class IntentionSharingModel(nn.Module):
         messages,
         rnn_states,
         masks,
+        step,
         available_actions=None,
         deterministic=False,
     ):
@@ -177,7 +197,8 @@ class IntentionSharingModel(nn.Module):
         rnn_states = rnn_states.reshape((-1, *rnn_states.shape[2:]))
 
         # We want the other agents' messages to be included in the agent's observations
-        other_messages = self._preprocess_messages(messages)
+        own_messages, other_messages = self._preprocess_messages(messages)
+        own_messages = own_messages.reshape((-1, own_messages.size(-1)))
         other_messages = other_messages.reshape((-1, other_messages.size(-1)))
 
         last_actions, action_log_probs, rnn_states = self.policy(
@@ -186,9 +207,12 @@ class IntentionSharingModel(nn.Module):
             masks,
             deterministic,
         )
-        message = self._message_generation_network(
-            last_obs, last_actions, other_messages, rnn_states, masks, deterministic
-        )
+        if step % self.communication_interval == 0:
+            message = self._message_generation_network(
+                last_obs, last_actions, other_messages, rnn_states, masks, deterministic
+            )
+        else:
+            message = own_messages
         return last_actions, action_log_probs, message, rnn_states
 
     def evaluate_actions(
@@ -198,6 +222,7 @@ class IntentionSharingModel(nn.Module):
         rnn_states,
         action,
         masks,
+        steps,
         available_actions=None,
         active_masks=None,
     ):
@@ -358,29 +383,35 @@ class IntentionSharingModel(nn.Module):
             # We assume messages having the dims (Batch, Agent, Features)
             msg_shape = messages.shape
             n_agents = messages.shape[1]
+            own_messages = []
             other_messages = []
             for idx in range(n_agents):
                 mask = torch.ones_like(messages)
                 mask[:, idx, :] = 0
                 mask = mask == 1
+                own_messages.append(messages[~mask].reshape(msg_shape[0], 1, -1))
                 other_messages.append(messages[mask].reshape(msg_shape[0], 1, -1))
+            own_messages = torch.cat(own_messages, 1)
             other_messages = torch.cat(other_messages, 1)
         elif messages.dim() == 4:
             # We assume messages having the dims (Seq, Batch, Agent, Features)
             msg_shape = messages.shape
             n_agents = messages.shape[2]
+            own_messages = []
             other_messages = []
             for idx in range(n_agents):
                 mask = torch.ones_like(messages)
                 mask[:, :, idx, :] = 0
                 mask = mask == 1
+                own_messages.append(messages[~mask].reshape(*msg_shape[:2], 1, -1))
                 other_messages.append(messages[mask].reshape(*msg_shape[:2], 1, -1))
+            own_messages = torch.cat(own_messages, 2)
             other_messages = torch.cat(other_messages, 2)
         else:
             ValueError(
                 f"Input expected to hva 3 or 4 dimensions, got {messages.dim()} instead."
             )
-        return other_messages
+        return own_messages, other_messages
 
 
 class CTDEMultiAgentWrapper(nn.Module):

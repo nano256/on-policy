@@ -769,6 +769,7 @@ class SharedReplayBuffer(object):
             active_masks_batch = []
             old_action_log_probs_batch = []
             messages_batch = []
+            steps_batch = []
             adv_targ = []
 
             for idx, ts in zip(indices, timesteps):
@@ -792,16 +793,16 @@ class SharedReplayBuffer(object):
                     action_log_probs[ts : ts + data_chunk_length, idx]
                 )
                 adv_targ.append(advantages[ts : ts + data_chunk_length, idx])
-                # size [T+1 N M Dim]-->[T N M Dim]-->[N M T Dim]-->[N*M*T,Dim]-->[1,Dim]
                 rnn_states_batch.append(rnn_states[ts, idx])
                 rnn_states_critic_batch.append(rnn_states_critic[ts, idx])
+                steps_batch.append(ts)
 
             # These are all from_numpys of size (L, N, Dim)
             share_obs_batch = np.stack(share_obs_batch, axis=1)
             obs_batch = np.stack(obs_batch, axis=1)
             if self.messages is not None:
                 messages_batch = np.stack(messages_batch)
-
+            steps_batch = np.stack(steps_batch)
             actions_batch = np.stack(actions_batch, axis=1)
             if self.available_actions is not None:
                 available_actions_batch = np.stack(available_actions_batch, axis=1)
@@ -817,6 +818,6 @@ class SharedReplayBuffer(object):
             rnn_states_critic_batch = np.stack(rnn_states_critic_batch)
 
             if self.messages is not None:
-                yield share_obs_batch, obs_batch, rnn_states_batch, rnn_states_critic_batch, actions_batch, value_preds_batch, return_batch, masks_batch, active_masks_batch, old_action_log_probs_batch, adv_targ, available_actions_batch, messages_batch
+                yield share_obs_batch, obs_batch, rnn_states_batch, rnn_states_critic_batch, actions_batch, value_preds_batch, return_batch, masks_batch, active_masks_batch, old_action_log_probs_batch, adv_targ, available_actions_batch, messages_batch, steps_batch
             else:
                 yield share_obs_batch, obs_batch, rnn_states_batch, rnn_states_critic_batch, actions_batch, value_preds_batch, return_batch, masks_batch, active_masks_batch, old_action_log_probs_batch, adv_targ, available_actions_batch

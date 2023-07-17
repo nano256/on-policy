@@ -82,6 +82,7 @@ class CR_Actor(nn.Module):
         messages,
         rnn_states,
         masks,
+        step,
         available_actions=None,
         deterministic=False,
     ):
@@ -134,6 +135,7 @@ class CR_Actor(nn.Module):
         rnn_states,
         action,
         masks,
+        steps,
         available_actions=None,
         active_masks=None,
     ):

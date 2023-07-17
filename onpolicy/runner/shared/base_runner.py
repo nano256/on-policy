@@ -72,8 +72,6 @@ class Runner(object):
             else self.envs.observation_space[0]
         )
 
-        self.message_space = Box(-np.inf, np.inf, (32,))
-
         if self.algorithm_name == "crmappo":
             from onpolicy.algorithms.r_mappo.cr_mappo import CR_MAPPO as TrainAlgo
             from onpolicy.algorithms.r_mappo.algorithm.crMAPPOPolicy import (
@@ -81,12 +79,20 @@ class Runner(object):
             )
 
             # policy network
+            if self.all_args.msg_value_transformation == "identity":
+                message_size = int(
+                    np.product(self.envs.action_space.shape)
+                ) * self.num_agents + int(np.product(self.envs.observation_space.shape))
+                self.message_space = Box(-np.inf, np.inf, (message_size,))
+            else:
+                self.message_space = Box(-np.inf, np.inf, (self.all_args.msg_size,))
+
             self.policy = Policy(
                 self.all_args,
                 self.envs.observation_space[0],
                 share_observation_space,
                 self.envs.action_space[0],
-                Box(-np.inf, np.inf, (32,)),
+                self.message_space,
                 self.num_agents,
                 device=self.device,
             )

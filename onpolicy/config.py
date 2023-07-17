@@ -364,10 +364,18 @@ def get_config():
     )
 
     parser.add_argument(
-        "--msg_value_transormation",
-        type=bool,
-        default=False,
-        help="If true, the value matrix in the message attention model is learned, otherwise an identity matrix.",
+        "--msg_value_transformation",
+        type=str,
+        default="learned",
+        choices=["learned", "identity"],
+        help="Set the value transformation mode in the intention aggregation module.",
+    )
+
+    parser.add_argument(
+        "--msg_size",
+        type=int,
+        default=16,
+        help="Message size of the communication channel.",
     )
 
     parser.add_argument(
@@ -383,6 +391,33 @@ def get_config():
         type=int,
         default=4,
         help="How many steps the intention model plans ahead.",
+    )
+
+    parser.add_argument(
+        "--pretrain_world_model",
+        type=bool,
+        default=False,
+        help="If true, pretrains the observation predictor of the world model.",
+    )
+    parser.add_argument(
+        "--pretrain_wm_n_samples",
+        type=int,
+        default=1e5,
+        help="How many samples are collected for pretraining the world model.",
+    )
+
+    parser.add_argument(
+        "--pretrain_wm_batch_size",
+        type=int,
+        default=100,
+        help="The batch size for pretraining the world model.",
+    )
+
+    parser.add_argument(
+        "--pretrain_wm_n_episodes",
+        type=int,
+        default=10,
+        help="How many episodes the world model is pretrained on the collected data.",
     )
 
     # optimizer parameters

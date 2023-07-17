@@ -101,6 +101,7 @@ class CR_MAPPOPolicy:
         rnn_states_actor,
         rnn_states_critic,
         masks,
+        step,
         available_actions=None,
         deterministic=False,
     ):
@@ -126,7 +127,13 @@ class CR_MAPPOPolicy:
         # Depending how the input is formatted, we will have to preprocess teh messages accordingly here.
         # The messages are here already in batch from (B, F), hence we have to do the processing earlier
         actions, action_log_probs, messages, rnn_states_actor = self.actor(
-            obs, messages, rnn_states_actor, masks, available_actions, deterministic
+            obs,
+            messages,
+            rnn_states_actor,
+            masks,
+            step,
+            available_actions,
+            deterministic,
         )
 
         values, rnn_states_critic = self.critic(cent_obs, rnn_states_critic, masks)
@@ -160,6 +167,7 @@ class CR_MAPPOPolicy:
         rnn_states_critic,
         action,
         masks,
+        steps,
         available_actions=None,
         active_masks=None,
     ):
@@ -185,6 +193,7 @@ class CR_MAPPOPolicy:
             rnn_states_actor,
             action,
             masks,
+            steps,
             available_actions,
             active_masks,
         )
