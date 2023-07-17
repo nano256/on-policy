@@ -126,7 +126,8 @@ class CR_Actor(nn.Module):
         )
         messages = self.msg(actor_features)
 
-        return actions, action_log_probs, messages, rnn_states
+        # Add another output at the end so it is compatible with the IS model
+        return actions, action_log_probs, messages, rnn_states, None
 
     def evaluate_actions(
         self,

@@ -128,6 +128,7 @@ class CR_MAPPO:
             available_actions_batch,
             messages_batch,
             steps_batch,
+            trajectories_batch,
         ) = sample
 
         old_action_log_probs_batch = check(old_action_log_probs_batch).to(**self.tpdv)
@@ -297,6 +298,7 @@ class CR_MAPPO:
             _,
             _,
             actions_batch,
+            _,
             _,
             _,
             _,

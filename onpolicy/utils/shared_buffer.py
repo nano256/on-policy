@@ -30,6 +30,7 @@ class SharedReplayBuffer(object):
         cent_obs_space,
         act_space,
         message_space=None,
+        trajectory_space=None,
         keep_agent_dim=False,
     ):
         self.episode_length = args.episode_length
@@ -136,6 +137,23 @@ class SharedReplayBuffer(object):
         else:
             self.messages = None
 
+        if trajectory_space is not None:
+            trajectory_shape = get_shape_from_obs_space(trajectory_space)
+            if type(trajectory_shape[-1]) == list:
+                trajectory_shape = trajectory_shape[:1]
+            self.trajectories = np.zeros(
+                (
+                    self.episode_length,
+                    self.n_rollout_threads,
+                    num_agents,
+                    args.imagined_traj_len,
+                    *trajectory_shape,
+                ),
+                dtype=np.float32,
+            )
+        else:
+            self.trajectories = None
+
         self.step = 0
 
     def insert(
@@ -153,6 +171,7 @@ class SharedReplayBuffer(object):
         active_masks=None,
         available_actions=None,
         messages=None,
+        trajectories=None,
     ):
         """
         Insert data into the buffer.
@@ -186,6 +205,8 @@ class SharedReplayBuffer(object):
             self.available_actions[self.step + 1] = available_actions.copy()
         if messages is not None:
             self.messages[self.step + 1] = messages.copy()
+        if trajectories is not None:
+            self.trajectories[self.step] = trajectories.copy()
 
         self.step = (self.step + 1) % self.episode_length
 
@@ -756,6 +777,9 @@ class SharedReplayBuffer(object):
         if self.available_actions is not None:
             available_actions = self.available_actions[:-1]
 
+        if self.trajectories is not None:
+            trajectories = self.trajectories[:-1]
+
         for indices, timesteps in zip(rollout_sampler, ts_sampler):
             share_obs_batch = []
             obs_batch = []
@@ -770,6 +794,7 @@ class SharedReplayBuffer(object):
             old_action_log_probs_batch = []
             messages_batch = []
             steps_batch = []
+            trajectories_batch = []
             adv_targ = []
 
             for idx, ts in zip(indices, timesteps):
@@ -796,6 +821,10 @@ class SharedReplayBuffer(object):
                 rnn_states_batch.append(rnn_states[ts, idx])
                 rnn_states_critic_batch.append(rnn_states_critic[ts, idx])
                 steps_batch.append(ts)
+                if self.trajectories is not None:
+                    trajectories_batch.append(
+                        trajectories[ts : ts + data_chunk_length, idx]
+                    )
 
             # These are all from_numpys of size (L, N, Dim)
             share_obs_batch = np.stack(share_obs_batch, axis=1)
@@ -812,12 +841,14 @@ class SharedReplayBuffer(object):
             active_masks_batch = np.stack(active_masks_batch, axis=1)
             old_action_log_probs_batch = np.stack(old_action_log_probs_batch, axis=1)
             adv_targ = np.stack(adv_targ, axis=1)
+            if self.trajectories is not None:
+                trajectories_batch = np.stack(trajectories_batch, axis=1)
 
             # States is just a (N, -1) from_numpy
             rnn_states_batch = np.stack(rnn_states_batch)
             rnn_states_critic_batch = np.stack(rnn_states_critic_batch)
 
             if self.messages is not None:
-                yield share_obs_batch, obs_batch, rnn_states_batch, rnn_states_critic_batch, actions_batch, value_preds_batch, return_batch, masks_batch, active_masks_batch, old_action_log_probs_batch, adv_targ, available_actions_batch, messages_batch, steps_batch
+                yield share_obs_batch, obs_batch, rnn_states_batch, rnn_states_critic_batch, actions_batch, value_preds_batch, return_batch, masks_batch, active_masks_batch, old_action_log_probs_batch, adv_targ, available_actions_batch, messages_batch, steps_batch, trajectories_batch
             else:
                 yield share_obs_batch, obs_batch, rnn_states_batch, rnn_states_critic_batch, actions_batch, value_preds_batch, return_batch, masks_batch, active_masks_batch, old_action_log_probs_batch, adv_targ, available_actions_batch

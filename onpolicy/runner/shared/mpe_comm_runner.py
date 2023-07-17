@@ -40,6 +40,7 @@ class MPECommunicationRunner(Runner):
                     rnn_states,
                     rnn_states_critic,
                     actions_env,
+                    trajectories,
                 ) = self.collect(step)
 
                 # Obser reward and next obs
@@ -56,6 +57,7 @@ class MPECommunicationRunner(Runner):
                     messages,
                     rnn_states,
                     rnn_states_critic,
+                    trajectories,
                 )
 
                 # insert data into buffer
@@ -148,6 +150,7 @@ class MPECommunicationRunner(Runner):
             message,
             rnn_states,
             rnn_states_critic,
+            trajectory,
         ) = self.trainer.policy.get_actions(
             self.buffer.share_obs[step],
             self.buffer.obs[step],
@@ -168,6 +171,10 @@ class MPECommunicationRunner(Runner):
         rnn_states_critic = np.array(
             np.split(_t2n(rnn_states_critic), self.n_rollout_threads)
         )
+        if trajectory is not None:
+            trajectories = np.array(np.split(_t2n(trajectory), self.n_rollout_threads))
+        else:
+            trajectories = None
         # rearrange action
         if self.envs.action_space[0].__class__.__name__ == "MultiDiscrete":
             for i in range(self.envs.action_space[0].shape):
@@ -191,6 +198,7 @@ class MPECommunicationRunner(Runner):
             rnn_states,
             rnn_states_critic,
             actions_env,
+            trajectories,
         )
 
     def insert(self, data):
@@ -205,6 +213,7 @@ class MPECommunicationRunner(Runner):
             messages,
             rnn_states,
             rnn_states_critic,
+            trajectories,
         ) = data
 
         rnn_states[dones == True] = np.zeros(
@@ -235,6 +244,7 @@ class MPECommunicationRunner(Runner):
             rewards,
             masks,
             messages=messages,
+            trajectories=trajectories,
         )
 
     @torch.no_grad()

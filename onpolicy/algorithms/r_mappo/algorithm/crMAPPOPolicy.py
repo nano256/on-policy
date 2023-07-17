@@ -126,7 +126,7 @@ class CR_MAPPOPolicy:
 
         # Depending how the input is formatted, we will have to preprocess teh messages accordingly here.
         # The messages are here already in batch from (B, F), hence we have to do the processing earlier
-        actions, action_log_probs, messages, rnn_states_actor = self.actor(
+        actions, action_log_probs, messages, rnn_states_actor, trajectory = self.actor(
             obs,
             messages,
             rnn_states_actor,
@@ -144,6 +144,7 @@ class CR_MAPPOPolicy:
             messages,
             rnn_states_actor,
             rnn_states_critic,
+            trajectory,
         )
 
     def get_values(self, cent_obs, rnn_states_critic, masks):
@@ -213,7 +214,7 @@ class CR_MAPPOPolicy:
                                   (if None, all actions available)
         :param deterministic: (bool) whether the action should be mode of distribution or should be sampled.
         """
-        actions, _, rnn_states_actor = self.actor(
+        actions, _, rnn_states_actor, _ = self.actor(
             obs, rnn_states_actor, masks, available_actions, deterministic
         )
         return actions, rnn_states_actor

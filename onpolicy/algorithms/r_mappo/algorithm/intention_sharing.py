@@ -116,6 +116,8 @@ class IntentionSharingModel(nn.Module):
 
         self.tpdv = dict(dtype=torch.float32, device=device)
 
+        self.last_imagined_traj = None
+
         self.obs_size = int(np.product(obs_space.shape))
         if isinstance(action_space, Discrete):
             self.action_size = action_space.n
@@ -208,12 +210,13 @@ class IntentionSharingModel(nn.Module):
             deterministic,
         )
         if step % self.communication_interval == 0:
-            message = self._message_generation_network(
+            message, trajectory = self._message_generation_network(
                 last_obs, last_actions, other_messages, rnn_states, masks, deterministic
             )
         else:
             message = own_messages
-        return last_actions, action_log_probs, message, rnn_states
+            trajectory = None
+        return last_actions, action_log_probs, message, rnn_states, trajectory
 
     def evaluate_actions(
         self,
@@ -254,10 +257,12 @@ class IntentionSharingModel(nn.Module):
                 active_masks = active_masks.reshape(
                     (active_masks.size(0), -1, active_masks.size(-1))
                 )
+            # Steps gives back the timestep of the batch, not the actor. Hence repeat and reshape.
+            steps = np.tile(steps.reshape(-1, 1), (1, self.group_size)).reshape(-1)
 
             action_log_probs_batch = []
             dist_entropy_batch = []
-            last_message = self._preprocess_messages(messages)
+            _, last_message = self._preprocess_messages(messages)
             last_message = last_message.reshape(-1, last_message.size(-1))
             # `rnn_states` contains the initial state of the RNN, no need for slicing
             last_rnn_state = rnn_states.reshape((-1, *rnn_states.shape[2:]))
@@ -281,13 +286,21 @@ class IntentionSharingModel(nn.Module):
             last_actions, _, last_rnn_state = self.policy(
                 input, last_rnn_state, masks[ts, ...]
             )
-
-            last_message = self._message_generation_network(
+            new_message, _ = self._message_generation_network(
                 obs[ts, ...], last_actions, last_message, last_rnn_state, masks[ts, ...]
-            ).reshape(messages.shape)
+            )
             # The messages have to be redistributed to the different agents
-            last_message = self._preprocess_messages(last_message)
-            last_message = last_message.reshape((-1, last_message.size(-1)))
+            _, new_message = self._preprocess_messages(
+                new_message.reshape(messages.shape)
+            )
+            new_message = new_message.reshape((-1, new_message.size(-1)))
+            # Get a mask that only gets the messages where a new communication interval starts
+            msg_update_mask = (steps + ts) % self.communication_interval == 0
+            # We have to merge old and new values in a new tensor without backward history, otherwise it will cause an error
+            msg_placeholder = torch.zeros_like(last_message)
+            msg_placeholder[msg_update_mask] = new_message[msg_update_mask]
+            msg_placeholder[~msg_update_mask] = last_message[~msg_update_mask]
+            last_message = msg_placeholder
 
         action_log_probs = torch.stack(action_log_probs_batch).reshape((*dims, 1))
         dist_entropy = torch.stack(dist_entropy_batch).mean()
@@ -373,7 +386,7 @@ class IntentionSharingModel(nn.Module):
         trajectory = trajectory.permute((*dims[1:-1], 0, -1))
 
         message = self.attention_module(other_messages, trajectory, trajectory)
-        return message
+        return message, trajectory
 
     def _one_hot_actions(self, actions):
         return F.one_hot(actions, self.action_size).squeeze().float()
