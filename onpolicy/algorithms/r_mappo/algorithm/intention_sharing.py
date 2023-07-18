@@ -348,6 +348,8 @@ class IntentionSharingModel(nn.Module):
         other_actions = self._one_hot_actions(other_actions)
         return other_actions.reshape(other_actions_raw.shape)
 
+    # We don't want the message generation to affect the world model params
+    @torch.no_grad()
     def _imagined_trajectory_generation_module(
         self, last_obs, last_actions, other_messages, rnn_states, masks, deterministic
     ):
