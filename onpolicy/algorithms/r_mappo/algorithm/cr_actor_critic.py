@@ -139,6 +139,7 @@ class CR_Actor(nn.Module):
         steps,
         available_actions=None,
         active_masks=None,
+        get_action_probs=False,
     ):
         """
         Compute log probability and entropy of given actions.

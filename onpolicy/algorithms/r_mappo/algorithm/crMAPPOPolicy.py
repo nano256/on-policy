@@ -171,6 +171,7 @@ class CR_MAPPOPolicy:
         steps,
         available_actions=None,
         active_masks=None,
+        get_action_probs=False,
     ):
         """
         Get action logprobs / entropy and value function predictions for actor update.
@@ -188,7 +189,7 @@ class CR_MAPPOPolicy:
         :return action_log_probs: (torch.Tensor) log probabilities of the input actions.
         :return dist_entropy: (torch.Tensor) action distribution entropy for the given inputs.
         """
-        action_log_probs, dist_entropy = self.actor.evaluate_actions(
+        actor_batch = self.actor.evaluate_actions(
             obs,
             messages,
             rnn_states_actor,
@@ -197,10 +198,19 @@ class CR_MAPPOPolicy:
             steps,
             available_actions,
             active_masks,
+            get_action_probs,
         )
 
+        if get_action_probs:
+            action_log_probs, dist_entropy, action_probs = actor_batch
+        else:
+            action_log_probs, dist_entropy = actor_batch
+
         values, _ = self.critic(cent_obs, rnn_states_critic, masks)
-        return values, action_log_probs, dist_entropy
+        if get_action_probs:
+            return values, action_log_probs, dist_entropy, action_probs
+        else:
+            return values, action_log_probs, dist_entropy
 
     def act(
         self, obs, rnn_states_actor, masks, available_actions=None, deterministic=False

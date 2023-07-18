@@ -420,6 +420,20 @@ def get_config():
         help="How many episodes the world model is pretrained on the collected data.",
     )
 
+    parser.add_argument(
+        "--use_commitment_loss",
+        type=bool,
+        default=False,
+        help="If true, apply commitment loss.",
+    )
+
+    parser.add_argument(
+        "--commitment_coef",
+        type=float,
+        default=1e-2,
+        help="Coefficient that determines how strongly the commitment loss will be considered.",
+    )
+
     # optimizer parameters
     parser.add_argument(
         "--lr", type=float, default=5e-4, help="learning rate (default: 5e-4)"

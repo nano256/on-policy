@@ -32,6 +32,7 @@ class CR_MAPPO:
         self.entropy_coef = args.entropy_coef
         self.max_grad_norm = args.max_grad_norm
         self.huber_delta = args.huber_delta
+        self.commitment_coef = args.commitment_coef
 
         self._use_recurrent_policy = args.use_recurrent_policy
         self._use_naive_recurrent = args.use_naive_recurrent_policy
@@ -42,6 +43,7 @@ class CR_MAPPO:
         self._use_valuenorm = args.use_valuenorm
         self._use_value_active_masks = args.use_value_active_masks
         self._use_policy_active_masks = args.use_policy_active_masks
+        self._use_commitment_loss = args.use_commitment_loss
 
         assert (
             self._use_popart and self._use_valuenorm
@@ -139,7 +141,7 @@ class CR_MAPPO:
         messages_batch = check(messages_batch).to(**self.tpdv)
 
         # Reshape to do in a single forward pass for all steps
-        values, action_log_probs, dist_entropy = self.policy.evaluate_actions(
+        eval_batch = self.policy.evaluate_actions(
             share_obs_batch,
             obs_batch,
             messages_batch,
@@ -150,7 +152,14 @@ class CR_MAPPO:
             steps_batch,
             available_actions_batch,
             active_masks_batch,
+            get_action_probs=True if self._use_commitment_loss else False,
         )
+
+        if self._use_commitment_loss:
+            (values, action_log_probs, dist_entropy, action_probs) = eval_batch
+        else:
+            (values, action_log_probs, dist_entropy) = eval_batch
+
         # Get values in right shape
         values = values.reshape(return_batch.shape)
         # actor update
@@ -174,10 +183,19 @@ class CR_MAPPO:
 
         policy_loss = policy_action_loss
 
+        if self._use_commitment_loss:
+            commitment_loss = self.commitment_loss(trajectories_batch, action_probs)
+        else:
+            commitment_loss = 0
+
         self.policy.actor_optimizer.zero_grad()
 
         if update_actor:
-            (policy_loss - dist_entropy * self.entropy_coef).backward()
+            (
+                policy_loss
+                - dist_entropy * self.entropy_coef
+                + commitment_loss * self.commitment_coef
+            ).backward()
 
         if self._use_max_grad_norm:
             actor_grad_norm = nn.utils.clip_grad_norm_(
@@ -290,6 +308,15 @@ class CR_MAPPO:
             train_info[k] /= num_updates
 
         return train_info
+
+    def commitment_loss(self, trajectories_batch, action_probs):
+        traj_actions = trajectories_batch[..., -self.policy.actor.action_size :]
+        traj_actions = torch.from_numpy(np.argmax(traj_actions, -1))
+        traj_actions = traj_actions.reshape((-1))
+        action_probs = torch.log(action_probs)
+        action_probs = action_probs.reshape((-1, action_probs.size(-1)))
+        loss_fn = nn.NLLLoss()
+        return loss_fn(action_probs, traj_actions)
 
     def world_model_update(self, sample):
         (

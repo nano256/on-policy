@@ -228,6 +228,7 @@ class IntentionSharingModel(nn.Module):
         steps,
         available_actions=None,
         active_masks=None,
+        get_action_probs=False,
     ):
         obs = check(obs).to(**self.tpdv)
         messages = check(messages).to(**self.tpdv)
@@ -262,6 +263,7 @@ class IntentionSharingModel(nn.Module):
 
             action_log_probs_batch = []
             dist_entropy_batch = []
+            action_probs_batch = []
             _, last_message = self._preprocess_messages(messages)
             last_message = last_message.reshape(-1, last_message.size(-1))
             # `rnn_states` contains the initial state of the RNN, no need for slicing
@@ -283,6 +285,11 @@ class IntentionSharingModel(nn.Module):
             action_log_probs_batch.append(action_log_probs)
             dist_entropy_batch.append(dist_entropy)
 
+            action_probs = self.policy_get_action_probs(
+                input, last_rnn_state, masks[ts, ...]
+            )
+            action_probs_batch.append(action_probs)
+
             last_actions, _, last_rnn_state = self.policy(
                 input, last_rnn_state, masks[ts, ...]
             )
@@ -303,9 +310,12 @@ class IntentionSharingModel(nn.Module):
             last_message = msg_placeholder
 
         action_log_probs = torch.stack(action_log_probs_batch).reshape((*dims, 1))
+        action_probs = torch.stack(action_probs_batch).reshape((*dims, -1))
         dist_entropy = torch.stack(dist_entropy_batch).mean()
-
-        return action_log_probs, dist_entropy
+        if get_action_probs:
+            return action_log_probs, dist_entropy, action_probs
+        else:
+            return action_log_probs, dist_entropy
 
     def policy(self, input, rnn_states=None, masks=None, deterministic=False):
         x = self.base(input)
@@ -323,6 +333,12 @@ class IntentionSharingModel(nn.Module):
             x, rnn_states = self.rnn(x, rnn_states, masks)
 
         return self.act.evaluate_actions(x, action, available_actions, active_masks)
+
+    def policy_get_action_probs(self, input, rnn_states, masks):
+        x = self.base(input)
+        if self._use_naive_recurrent_policy or self._use_recurrent_policy:
+            x, rnn_states = self.rnn(x, rnn_states, masks)
+        return self.act.get_probs(x)
 
     def _predict_other_actions(self, obs):
         other_actions_raw = self.action_predictor(obs)

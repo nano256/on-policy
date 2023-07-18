@@ -146,7 +146,6 @@ class SharedReplayBuffer(object):
                     self.episode_length,
                     self.n_rollout_threads,
                     num_agents,
-                    args.imagined_traj_len,
                     *trajectory_shape,
                 ),
                 dtype=np.float32,
@@ -206,9 +205,20 @@ class SharedReplayBuffer(object):
         if messages is not None:
             self.messages[self.step + 1] = messages.copy()
         if trajectories is not None:
-            self.trajectories[self.step] = trajectories.copy()
+            self.insert_trajectories(trajectories)
 
         self.step = (self.step + 1) % self.episode_length
+
+    def insert_trajectories(self, trajectories):
+        assert (
+            trajectories.ndim == 4
+        ), f"Four dimensions assumed, (batch, agent, traj, features). Got {trajectories.ndim} dims."
+        traj_steps = trajectories.shape[-2]
+        max_traj_step = self.trajectories.shape[0]
+        for i in range(traj_steps):
+            if self.step + i >= max_traj_step:
+                break
+            self.trajectories[self.step + i] = trajectories[..., i, :]
 
     def chooseinsert(
         self,
