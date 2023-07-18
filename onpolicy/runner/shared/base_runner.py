@@ -82,8 +82,11 @@ class Runner(object):
             obs_size = int(np.product(self.envs.observation_space[0].shape))
             self.trajectory_space = Box(-np.inf, np.inf, (act_size + obs_size,))
             # policy network
-            if self.all_args.msg_value_transformation == "identity":
-                message_size = act_size * self.num_agents + obs_size
+            if (
+                self.all_args.msg_value_transformation == "identity"
+                or self.all_args.intention_aggregation == "mean"
+            ):
+                message_size = act_size + obs_size
                 self.message_space = Box(-np.inf, np.inf, (message_size,))
             else:
                 self.message_space = Box(-np.inf, np.inf, (self.all_args.msg_size,))

@@ -169,7 +169,7 @@ class IntentionSharingModel(nn.Module):
                 value_transform=args.msg_value_transformation,
             )
         elif self.intention_aggregation == "mean":
-            self.attention_module = lambda t: torch.mean(t, 0)
+            self.attention_module = lambda t: torch.mean(t, -2)
         else:
             ValueError(
                 f'"{self.intention_aggregation}" is not a valid intention aggregation mode.'
@@ -403,7 +403,10 @@ class IntentionSharingModel(nn.Module):
         dims = torch.arange(trajectory.dim())
         trajectory = trajectory.permute((*dims[1:-1], 0, -1))
 
-        message = self.attention_module(other_messages, trajectory, trajectory)
+        if self.intention_aggregation == "attention":
+            message = self.attention_module(other_messages, trajectory, trajectory)
+        elif self.intention_aggregation == "mean":
+            message = self.attention_module(trajectory)
         return message, trajectory
 
     def _one_hot_actions(self, actions):
