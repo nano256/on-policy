@@ -350,12 +350,7 @@ def get_config():
     )
 
     # intention sharing parameters
-    parser.add_argument(
-        "--commitment_regularization",
-        type=bool,
-        default=False,
-        help="Use commitment regularization.",
-    )
+
     parser.add_argument(
         "--communication_interval",
         type=int,
@@ -395,10 +390,11 @@ def get_config():
 
     parser.add_argument(
         "--pretrain_world_model",
-        type=bool,
+        action="store_true",
         default=False,
         help="If true, pretrains the observation predictor of the world model.",
     )
+
     parser.add_argument(
         "--pretrain_wm_n_samples",
         type=int,
@@ -422,7 +418,7 @@ def get_config():
 
     parser.add_argument(
         "--use_commitment_loss",
-        type=bool,
+        action="store_true",
         default=False,
         help="If true, apply commitment loss.",
     )

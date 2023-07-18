@@ -483,8 +483,7 @@ class MPECommunicationRunner(Runner):
                 loss = loss_fn(y_pred, y)
                 loss.backward()
                 optim.step()
-                # TODO: Replace with proper tensorboard log
-                print(f"WM obs. predictor loss at step {steps}: {loss:.4f}")
+                # print(f"WM obs. predictor loss at step {steps}: {loss:.4f}")
                 self.log_train({"wm_obs_pred_pretrain_loss": loss.item()}, steps)
                 steps += batch_size
 
