@@ -174,6 +174,7 @@ class IntentionSharingModel(nn.Module):
             ValueError(
                 f'"{self.intention_aggregation}" is not a valid intention aggregation mode.'
             )
+        self.to(device)
 
     def forward(
         self,
@@ -322,7 +323,7 @@ class IntentionSharingModel(nn.Module):
         if self._use_naive_recurrent_policy or self._use_recurrent_policy:
             x, rnn_states = self.rnn(x, rnn_states, masks)
 
-        actions, action_log_probs = self.act(x, deterministic)
+        actions, action_log_probs = self.act(x, deterministic=deterministic)
         return actions, action_log_probs, rnn_states
 
     def policy_evaluate_actions(
