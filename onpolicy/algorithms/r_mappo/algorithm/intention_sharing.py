@@ -71,12 +71,12 @@ class AttentionModule(nn.Module):
         # Efficient implementation equivalent to the following:
         L, S = query.size(-2), key.size(-2)
         scale_factor = 1 / math.sqrt(query.size(-1)) if scale is None else scale
-        attn_bias = torch.zeros(L, S, dtype=query.dtype)
+        attn_bias = torch.zeros(L, S, dtype=query.dtype, device=query.device)
         if is_causal:
             assert attn_mask is None
-            temp_mask = torch.ones(L, S, dtype=torch.bool).tril(diagonal=0)
+            temp_mask = torch.ones(L, S, dtype=torch.bool, device=query.device).tril(diagonal=0)
             attn_bias.masked_fill_(temp_mask.logical_not(), float("-inf"))
-            attn_bias.to(query.dtype)
+            attn_bias.to(device=query.dtype)
 
         if attn_mask is not None:
             if attn_mask.dtype == torch.bool:
@@ -399,7 +399,7 @@ class IntentionSharingModel(nn.Module):
             )
             last_actions = self._one_hot_actions(last_actions)
             trajectory.append(torch.cat((last_obs, last_actions), dim=-1))
-        trajectory = torch.stack(trajectory)
+        trajectory = torch.stack(trajectory).to(**self.tpdv)
         # We have to transpose the tensor to put the batch dim as the first and traj dim as second last
         dims = torch.arange(trajectory.dim())
         trajectory = trajectory.permute((*dims[1:-1], 0, -1))

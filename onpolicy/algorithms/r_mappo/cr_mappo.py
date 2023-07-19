@@ -184,6 +184,7 @@ class CR_MAPPO:
         policy_loss = policy_action_loss
 
         if self._use_commitment_loss:
+            trajectories_batch = torch.from_numpy(trajectories_batch).to(**self.tpdv)
             commitment_loss = self.commitment_loss(trajectories_batch, action_probs)
         else:
             commitment_loss = 0
@@ -231,6 +232,7 @@ class CR_MAPPO:
             dist_entropy,
             actor_grad_norm,
             imp_weights,
+            commitment_loss
         )
 
     def train(self, buffer, update_actor=True):
@@ -264,6 +266,8 @@ class CR_MAPPO:
         if isinstance(self.policy.actor, IntentionSharingModel):
             train_info["wm_act_pred_loss"] = 0
             train_info["wm_obs_pred_loss"] = 0
+        if self._use_commitment_loss:
+            train_info["commitment_loss"] = 0
 
         for _ in range(self.ppo_epoch):
             if self._use_recurrent_policy:
@@ -287,6 +291,7 @@ class CR_MAPPO:
                     dist_entropy,
                     actor_grad_norm,
                     imp_weights,
+                    commitment_loss
                 ) = self.ppo_update(sample, update_actor)
 
                 if isinstance(self.policy.actor, IntentionSharingModel):
@@ -301,6 +306,8 @@ class CR_MAPPO:
                 if isinstance(self.policy.actor, IntentionSharingModel):
                     train_info["wm_act_pred_loss"] += wm_act_pred_loss.item()
                     train_info["wm_obs_pred_loss"] += wm_obs_pred_loss.item()
+                if self._use_commitment_loss:
+                    train_info["commitment_loss"] += commitment_loss.item()
 
         num_updates = self.ppo_epoch * self.num_mini_batch
 
@@ -311,7 +318,7 @@ class CR_MAPPO:
 
     def commitment_loss(self, trajectories_batch, action_probs):
         traj_actions = trajectories_batch[..., -self.policy.actor.action_size :]
-        traj_actions = torch.from_numpy(np.argmax(traj_actions, -1))
+        traj_actions = torch.argmax(traj_actions, -1)
         traj_actions = traj_actions.reshape((-1))
         action_probs = torch.log(action_probs)
         action_probs = action_probs.reshape((-1, action_probs.size(-1)))

@@ -460,10 +460,10 @@ class MPECommunicationRunner(Runner):
         # Take all obs except the last of each episode as the input data
         initial_obs = obs_batch[:, :-1, ...]
         x_train = torch.cat((initial_obs, action_batch), -1)
-        x_train = x_train.reshape(-1, x_train.size(-1))[:n_samples]
+        x_train = x_train.reshape(-1, x_train.size(-1))[:n_samples].to(**model.tpdv)
         # Take all consecutive obs of x as our labels
-        y_train = obs_batch[:, 1:, ...].reshape(-1, obs_batch.size(-1))[:n_samples]
-        initial_obs_train = initial_obs.reshape(-1, obs_batch.size(-1))[:n_samples]
+        y_train = obs_batch[:, 1:, ...].reshape(-1, obs_batch.size(-1))[:n_samples].to(**model.tpdv)
+        initial_obs_train = initial_obs.reshape(-1, obs_batch.size(-1))[:n_samples].to(**model.tpdv)
 
         n_batches = n_samples // batch_size
 

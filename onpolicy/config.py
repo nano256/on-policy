@@ -398,7 +398,7 @@ def get_config():
     parser.add_argument(
         "--pretrain_wm_n_samples",
         type=int,
-        default=1e5,
+        default=100000,
         help="How many samples are collected for pretraining the world model.",
     )
 
