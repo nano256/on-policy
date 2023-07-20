@@ -49,30 +49,30 @@ echo "env is ${env}, scenario is ${scenario}, max seed is ${seed_max}"
 #     --model "nn" --algorithm_name "rmappo" --experiment_name "${exp_prefix}_nn_IPPO" --use_centralized_V 0
 # done
 
-echo "Current experiment: RIPPO, local obs only"
-for seed in `seq ${seed_max}`;
-do
-    echo "seed is ${seed}:"
-    CUDA_VISIBLE_DEVICES=0 python ../train/train_mpe.py --env_name ${env} --user_name ${user_name} --use_wandb 0 \
-    --scenario_name ${scenario} --num_agents ${num_agents} --num_landmarks ${num_landmarks} --seed ${seed} \
-    --n_training_threads ${n_training_threads} --n_rollout_threads ${n_rollout_threads} \
-    --num_mini_batch ${num_mini_batch} --episode_length ${episode_length} --num_env_steps ${num_env_steps} \
-    --ppo_epoch ${ppo_epoch} --use_ReLU --gain ${gain} --lr ${lr} --critic_lr ${critic_lr} --wandb_name ${exp} \
-    --model "nn" --algorithm_name "rmappo" --experiment_name "${exp_prefix}_nn_IPPO_local" --use_centralized_V 0 \
-    --use_local_obs 1
-done
+# echo "Current experiment: RIPPO, local obs only"
+# for seed in `seq ${seed_max}`;
+# do
+#     echo "seed is ${seed}:"
+#     CUDA_VISIBLE_DEVICES=0 python ../train/train_mpe.py --env_name ${env} --user_name ${user_name} --use_wandb 0 \
+#     --scenario_name ${scenario} --num_agents ${num_agents} --num_landmarks ${num_landmarks} --seed ${seed} \
+#     --n_training_threads ${n_training_threads} --n_rollout_threads ${n_rollout_threads} \
+#     --num_mini_batch ${num_mini_batch} --episode_length ${episode_length} --num_env_steps ${num_env_steps} \
+#     --ppo_epoch ${ppo_epoch} --use_ReLU --gain ${gain} --lr ${lr} --critic_lr ${critic_lr} --wandb_name ${exp} \
+#     --model "nn" --algorithm_name "rmappo" --experiment_name "${exp_prefix}_nn_IPPO_local" --use_centralized_V 0 \
+#     --use_local_obs 1
+# done
 
-echo "Current experiment: RMAPPO, local obs only"
-for seed in `seq ${seed_max}`;
-do
-    echo "seed is ${seed}:"
-    CUDA_VISIBLE_DEVICES=0 python ../train/train_mpe.py --env_name ${env} --user_name ${user_name} --use_wandb 0 \
-    --scenario_name ${scenario} --num_agents ${num_agents} --num_landmarks ${num_landmarks} --seed ${seed} \
-    --n_training_threads ${n_training_threads} --n_rollout_threads ${n_rollout_threads} \
-    --num_mini_batch ${num_mini_batch} --episode_length ${episode_length} --num_env_steps ${num_env_steps} \
-    --ppo_epoch ${ppo_epoch} --use_ReLU --gain ${gain} --lr ${lr} --critic_lr ${critic_lr} --wandb_name ${exp} \
-     --model "nn" --algorithm_name "rmappo" --experiment_name "${exp_prefix}_nn_local" --use_local_obs 1
-done
+# echo "Current experiment: RMAPPO, local obs only"
+# for seed in `seq ${seed_max}`;
+# do
+#     echo "seed is ${seed}:"
+#     CUDA_VISIBLE_DEVICES=0 python ../train/train_mpe.py --env_name ${env} --user_name ${user_name} --use_wandb 0 \
+#     --scenario_name ${scenario} --num_agents ${num_agents} --num_landmarks ${num_landmarks} --seed ${seed} \
+#     --n_training_threads ${n_training_threads} --n_rollout_threads ${n_rollout_threads} \
+#     --num_mini_batch ${num_mini_batch} --episode_length ${episode_length} --num_env_steps ${num_env_steps} \
+#     --ppo_epoch ${ppo_epoch} --use_ReLU --gain ${gain} --lr ${lr} --critic_lr ${critic_lr} --wandb_name ${exp} \
+#      --model "nn" --algorithm_name "rmappo" --experiment_name "${exp_prefix}_nn_local" --use_local_obs 1
+# done
 
 # echo "Current experiment: CRMAPPO"
 # for seed in `seq ${seed_max}`;
@@ -142,22 +142,38 @@ done
 #     --imagined_traj_len ${imagined_traj_len} --communication_interval ${communication_interval} --use_centralized_V 0
 # done
 
-echo "Current experiment: CRIPPO, plain IS, local obs only"
-for seed in `seq ${seed_max}`;
-do
-    echo "seed is ${seed}:"
-    CUDA_VISIBLE_DEVICES=0 python ../train/train_mpe.py --env_name ${env} --user_name ${user_name} --use_wandb 0 \
-    --scenario_name ${scenario} --num_agents ${num_agents} --num_landmarks ${num_landmarks} --seed ${seed} \
-    --n_training_threads ${n_training_threads} --n_rollout_threads ${n_rollout_threads} \
-    --num_mini_batch ${num_mini_batch} --episode_length ${episode_length} --num_env_steps ${num_env_steps} \
-    --ppo_epoch ${ppo_epoch} --use_ReLU --gain ${gain} --lr ${lr} --critic_lr ${critic_lr} --wandb_name ${exp} \
-    --imagined_traj_len ${imagined_traj_len} --communication_interval 1 --pretrain_world_model 1 --pretrain_wm_n_samples ${pretrain_wm_n_samples} \
-    --pretrain_wm_batch_size ${pretrain_wm_batch_size} --pretrain_wm_n_episodes ${pretrain_wm_n_episodes}  \
-     --model "is" --algorithm_name "crmappo" --experiment_name "${exp_prefix}_is_plain_IPPO_local" \
-     --use_centralized_V 0 --use_local_obs 1
-done
+# echo "Current experiment: CRIPPO, plain IS, local obs only"
+# for seed in `seq ${seed_max}`;
+# do
+#     echo "seed is ${seed}:"
+#     CUDA_VISIBLE_DEVICES=0 python ../train/train_mpe.py --env_name ${env} --user_name ${user_name} --use_wandb 0 \
+#     --scenario_name ${scenario} --num_agents ${num_agents} --num_landmarks ${num_landmarks} --seed ${seed} \
+#     --n_training_threads ${n_training_threads} --n_rollout_threads ${n_rollout_threads} \
+#     --num_mini_batch ${num_mini_batch} --episode_length ${episode_length} --num_env_steps ${num_env_steps} \
+#     --ppo_epoch ${ppo_epoch} --use_ReLU --gain ${gain} --lr ${lr} --critic_lr ${critic_lr} --wandb_name ${exp} \
+#     --imagined_traj_len ${imagined_traj_len} --communication_interval 1 --pretrain_world_model 1 --pretrain_wm_n_samples ${pretrain_wm_n_samples} \
+#     --pretrain_wm_batch_size ${pretrain_wm_batch_size} --pretrain_wm_n_episodes ${pretrain_wm_n_episodes}  \
+#      --model "is" --algorithm_name "crmappo" --experiment_name "${exp_prefix}_is_plain_IPPO_local" \
+#      --use_centralized_V 0 --use_local_obs 1
+# done
 
-echo "Current experiment: CRIPPO, IS with commitment loss, local obs only"
+# echo "Current experiment: CRIPPO, IS with commitment loss, local obs only"
+# for seed in `seq ${seed_max}`;
+# do
+#     echo "seed is ${seed}:"
+#     CUDA_VISIBLE_DEVICES=0 python ../train/train_mpe.py --env_name ${env} --user_name ${user_name} --use_wandb 0 \
+#     --scenario_name ${scenario} --num_agents ${num_agents} --num_landmarks ${num_landmarks} --seed ${seed} \
+#     --n_training_threads ${n_training_threads} --n_rollout_threads ${n_rollout_threads} \
+#     --num_mini_batch ${num_mini_batch} --episode_length ${episode_length} --num_env_steps ${num_env_steps} \
+#     --ppo_epoch ${ppo_epoch} --use_ReLU --gain ${gain} --lr ${lr} --critic_lr ${critic_lr} --wandb_name ${exp} \
+#     --pretrain_world_model 1 --pretrain_wm_n_samples ${pretrain_wm_n_samples} \
+#     --pretrain_wm_batch_size ${pretrain_wm_batch_size} --pretrain_wm_n_episodes ${pretrain_wm_n_episodes} \
+#     --model "is" --algorithm_name "crmappo" --experiment_name "${exp_prefix}_is_commitment_IPPO_local" --use_commitment_loss 1 \
+#     --imagined_traj_len ${imagined_traj_len} --communication_interval ${communication_interval} --use_centralized_V 0 \
+#     --use_local_obs 1
+# done
+
+echo "Current experiment: CRIPPO, IP, w/o plan, with commitment loss, local obs only"
 for seed in `seq ${seed_max}`;
 do
     echo "seed is ${seed}:"
@@ -168,7 +184,23 @@ do
     --ppo_epoch ${ppo_epoch} --use_ReLU --gain ${gain} --lr ${lr} --critic_lr ${critic_lr} --wandb_name ${exp} \
     --pretrain_world_model 1 --pretrain_wm_n_samples ${pretrain_wm_n_samples} \
     --pretrain_wm_batch_size ${pretrain_wm_batch_size} --pretrain_wm_n_episodes ${pretrain_wm_n_episodes} \
-    --model "is" --algorithm_name "crmappo" --experiment_name "${exp_prefix}_is_commitment_IPPO_local" --use_commitment_loss 1 \
+    --model "ip" --algorithm_name "crmappo" --experiment_name "${exp_prefix}_ip_no_plan_commitment_IPPO_local" --use_commitment_loss 1 \
     --imagined_traj_len ${imagined_traj_len} --communication_interval ${communication_interval} --use_centralized_V 0 \
     --use_local_obs 1
+done
+
+echo "Current experiment: CRIPPO, IP, with plan, with commitment loss, local obs only"
+for seed in `seq ${seed_max}`;
+do
+    echo "seed is ${seed}:"
+    CUDA_VISIBLE_DEVICES=0 python ../train/train_mpe.py --env_name ${env} --user_name ${user_name} --use_wandb 0 \
+    --scenario_name ${scenario} --num_agents ${num_agents} --num_landmarks ${num_landmarks} --seed ${seed} \
+    --n_training_threads ${n_training_threads} --n_rollout_threads ${n_rollout_threads} \
+    --num_mini_batch ${num_mini_batch} --episode_length ${episode_length} --num_env_steps ${num_env_steps} \
+    --ppo_epoch ${ppo_epoch} --use_ReLU --gain ${gain} --lr ${lr} --critic_lr ${critic_lr} --wandb_name ${exp} \
+    --pretrain_world_model 1 --pretrain_wm_n_samples ${pretrain_wm_n_samples} \
+    --pretrain_wm_batch_size ${pretrain_wm_batch_size} --pretrain_wm_n_episodes ${pretrain_wm_n_episodes} \
+    --model "ip" --algorithm_name "crmappo" --experiment_name "${exp_prefix}_ip_plan_commitment_IPPO_local" --use_commitment_loss 1 \
+    --imagined_traj_len ${imagined_traj_len} --communication_interval ${communication_interval} --use_centralized_V 0 \
+    --use_local_obs 1 --use_plan_for_msg_generation 1
 done

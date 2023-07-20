@@ -3,6 +3,9 @@ from onpolicy.algorithms.r_mappo.algorithm.cr_actor_critic import CR_Actor, CR_C
 from onpolicy.algorithms.r_mappo.algorithm.intention_sharing import (
     IntentionSharingModel,
 )
+from onpolicy.algorithms.r_mappo.algorithm.intention_planning import (
+    IntentionPlanningModel,
+)
 from onpolicy.utils.util import update_linear_schedule
 
 
@@ -57,6 +60,17 @@ class CR_MAPPOPolicy:
                 self.n_agents,
                 self.device,
             )
+        elif args.model == "ip":
+            self.actor = IntentionPlanningModel(
+                args,
+                self.obs_space,
+                self.act_space,
+                self.message_space,
+                self.n_agents,
+                self.device,
+            )
+
+        if args.model == "is" or args.model == "ip":
             self.obs_predictor_optimizer = torch.optim.Adam(
                 self.actor.observation_predictor.parameters(),
                 lr=self.lr,

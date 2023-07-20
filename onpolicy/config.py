@@ -353,7 +353,7 @@ def get_config():
         "--model",
         type=str,
         default="nn",
-        choices=["nn", "is"],
+        choices=["nn", "is", "ip"],
         help="Model architecture.",
     )
 
@@ -436,6 +436,14 @@ def get_config():
         type=float,
         default=1e-2,
         help="Coefficient that determines how strongly the commitment loss will be considered.",
+    )
+
+    # intention planning parameters
+    parser.add_argument(
+        "--use_plan_for_msg_generation",
+        action="store_true",
+        default=False,
+        help="If true, the intention planning model uses the old plan for creating the new one.",
     )
 
     # optimizer parameters

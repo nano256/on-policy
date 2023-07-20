@@ -9,6 +9,9 @@ from onpolicy.algorithms.utils.util import check
 from onpolicy.algorithms.r_mappo.algorithm.intention_sharing import (
     IntentionSharingModel,
 )
+from onpolicy.algorithms.r_mappo.algorithm.intention_planning import (
+    IntentionPlanningModel,
+)
 
 
 class CR_MAPPO:
@@ -232,7 +235,7 @@ class CR_MAPPO:
             dist_entropy,
             actor_grad_norm,
             imp_weights,
-            commitment_loss
+            commitment_loss,
         )
 
     def train(self, buffer, update_actor=True):
@@ -263,7 +266,9 @@ class CR_MAPPO:
         train_info["actor_grad_norm"] = 0
         train_info["critic_grad_norm"] = 0
         train_info["ratio"] = 0
-        if isinstance(self.policy.actor, IntentionSharingModel):
+        if isinstance(
+            self.policy.actor, (IntentionSharingModel, IntentionPlanningModel)
+        ):
             train_info["wm_act_pred_loss"] = 0
             train_info["wm_obs_pred_loss"] = 0
         if self._use_commitment_loss:
@@ -291,10 +296,12 @@ class CR_MAPPO:
                     dist_entropy,
                     actor_grad_norm,
                     imp_weights,
-                    commitment_loss
+                    commitment_loss,
                 ) = self.ppo_update(sample, update_actor)
 
-                if isinstance(self.policy.actor, IntentionSharingModel):
+                if isinstance(
+                    self.policy.actor, (IntentionSharingModel, IntentionPlanningModel)
+                ):
                     wm_act_pred_loss, wm_obs_pred_loss = self.world_model_update(sample)
 
                 train_info["value_loss"] += value_loss.item()
@@ -303,7 +310,9 @@ class CR_MAPPO:
                 train_info["actor_grad_norm"] += actor_grad_norm
                 train_info["critic_grad_norm"] += critic_grad_norm
                 train_info["ratio"] += imp_weights.mean()
-                if isinstance(self.policy.actor, IntentionSharingModel):
+                if isinstance(
+                    self.policy.actor, (IntentionSharingModel, IntentionPlanningModel)
+                ):
                     train_info["wm_act_pred_loss"] += wm_act_pred_loss.item()
                     train_info["wm_obs_pred_loss"] += wm_obs_pred_loss.item()
                 if self._use_commitment_loss:

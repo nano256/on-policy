@@ -129,7 +129,7 @@ class Runner(object):
             share_observation_space,
             self.envs.action_space[0],
             self.message_space if self.algorithm_name == "crmappo" else None,
-            self.trajectory_space if self.all_args.model == "is" else None,
+            self.trajectory_space if self.all_args.model in ("is", "ip") else None,
         )
 
     def run(self):
