@@ -339,6 +339,14 @@ def get_config():
         help="Time length of chunks used to train a recurrent_policy",
     )
 
+    # env parameters
+    parser.add_argument(
+        "--use_local_obs",
+        action="store_true",
+        default=False,
+        help="If true, omits the positions of other agents in the obs of simple spread.",
+    )
+
     # model parameters
     # 'nn' refers to the default config where where the network is entirely configured via the network parameters
     parser.add_argument(
