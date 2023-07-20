@@ -120,7 +120,7 @@ class MPECommunicationRunner(Runner):
     def warmup(self):
         if self.all_args.model == "is" and self.all_args.pretrain_world_model:
             self.pretrain_world_model(
-                self.trainer.policy.actor,
+                self.trainer.policy,
                 self.envs,
                 self.num_agents,
                 self.all_args.pretrain_wm_n_samples,
@@ -422,7 +422,7 @@ class MPECommunicationRunner(Runner):
             )
 
     def pretrain_world_model(
-        self, model, env, n_agents, n_samples, batch_size, n_episodes
+        self, policy, env, n_agents, n_samples, batch_size, n_episodes
     ):
         # Since each env step gives the number of agents in samples
         samples_per_env_step = n_agents * env.num_envs
@@ -434,7 +434,8 @@ class MPECommunicationRunner(Runner):
         action_rollout = []
         n_actions = env.action_space[0].n
         actions_per_step = np.product(obs.shape[:-1])
-        obs_predictor = model.observation_predictor
+        obs_predictor = policy.actor.observation_predictor
+        optim = policy.obs_predictor_optimizer
         collected_samples = 0
         # Collect observations from random trajectories
         while True:
@@ -457,17 +458,28 @@ class MPECommunicationRunner(Runner):
         obs_batch = torch.Tensor(np.array(obs_batch))
         action_batch = torch.Tensor(np.array(action_batch))
         action_batch = self._preprocess_actions(action_batch)
+        # To ensure that the timesteps in the train batches are in correct order, we have to transpose the obs tensor
+        perm_seq = (0, 2, 3, 1, 4)
+        obs_batch = obs_batch.permute(perm_seq)
+        action_batch = action_batch.permute(perm_seq)
         # Take all obs except the last of each episode as the input data
-        initial_obs = obs_batch[:, :-1, ...]
+        initial_obs = obs_batch[..., :-1, :]
         x_train = torch.cat((initial_obs, action_batch), -1)
-        x_train = x_train.reshape(-1, x_train.size(-1))[:n_samples].to(**model.tpdv)
+        x_train = x_train.reshape(-1, x_train.size(-1))[:n_samples].to(
+            **policy.actor.tpdv
+        )
         # Take all consecutive obs of x as our labels
-        y_train = obs_batch[:, 1:, ...].reshape(-1, obs_batch.size(-1))[:n_samples].to(**model.tpdv)
-        initial_obs_train = initial_obs.reshape(-1, obs_batch.size(-1))[:n_samples].to(**model.tpdv)
+        y_train = (
+            obs_batch[..., 1:, :]
+            .reshape(-1, obs_batch.size(-1))[:n_samples]
+            .to(**policy.actor.tpdv)
+        )
+        initial_obs_train = initial_obs.reshape(-1, obs_batch.size(-1))[:n_samples].to(
+            **policy.actor.tpdv
+        )
 
         n_batches = n_samples // batch_size
 
-        optim = torch.optim.Adam(obs_predictor.parameters())
         loss_fn = nn.MSELoss()
         steps = 0
         for _ in range(n_episodes):
