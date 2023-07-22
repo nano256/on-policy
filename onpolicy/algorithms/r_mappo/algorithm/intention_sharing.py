@@ -16,9 +16,19 @@ class MLP(nn.Module):
     def __init__(self, input_size, output_size, hidden_size=128, num_hidden=2):
         nn.Module.__init__(self)
         activation_fn = nn.ReLU
-        layers = [nn.Linear(input_size, hidden_size), activation_fn()]
+        layers = [
+            nn.Linear(input_size, hidden_size),
+            activation_fn(),
+            nn.LayerNorm(hidden_size),
+        ]
         for _ in range(num_hidden):
-            layers.extend([nn.Linear(hidden_size, hidden_size), activation_fn()])
+            layers.extend(
+                [
+                    nn.Linear(hidden_size, hidden_size),
+                    activation_fn(),
+                    nn.LayerNorm(hidden_size),
+                ]
+            )
         layers.append(nn.Linear(hidden_size, output_size))
 
         self.mlp = nn.Sequential(*layers)
@@ -74,7 +84,9 @@ class AttentionModule(nn.Module):
         attn_bias = torch.zeros(L, S, dtype=query.dtype, device=query.device)
         if is_causal:
             assert attn_mask is None
-            temp_mask = torch.ones(L, S, dtype=torch.bool, device=query.device).tril(diagonal=0)
+            temp_mask = torch.ones(L, S, dtype=torch.bool, device=query.device).tril(
+                diagonal=0
+            )
             attn_bias.masked_fill_(temp_mask.logical_not(), float("-inf"))
             attn_bias.to(device=query.dtype)
 
