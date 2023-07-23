@@ -15,4 +15,4 @@ module load python_gpu/3.11.2
 
 source /cluster/home/miperez/venvs/onpolicy311/bin/activate
 
-source ../experiments/train_mpe_ss_local_ip.sh 0 12 0.1
+source ../experiments/train_mpe_ss_local_ip.sh 0 26 0.0

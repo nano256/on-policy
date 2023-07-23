@@ -5,7 +5,7 @@
 #SBATCH --gpus=1
 #SBATCH --gres=gpumem:2048m
 #SBATCH --time=6:00:00
-#SBATCH --job-name="onpolicy_core_test"
+#SBATCH --job-name="ss-local-ip"
 #SBATCH --mem-per-cpu=3072
 #SBATCH --mail-type=END
 #SBATCH --mail-user=miperez@ethz.ch
