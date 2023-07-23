@@ -114,7 +114,7 @@ class IntentionSharingModel(nn.Module):
     ):
         nn.Module.__init__(self)
         self.hidden_size = args.hidden_size
-        self.num_hidden = 2
+        self.num_hidden = args.layer_N
         self._gain = args.gain
         self._use_orthogonal = args.use_orthogonal
         self._use_policy_active_masks = args.use_policy_active_masks
