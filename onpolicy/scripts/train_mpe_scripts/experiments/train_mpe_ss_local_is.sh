@@ -6,7 +6,7 @@ num_landmarks=3
 num_agents=3
 episode_length=25
 user_name="miperez"
-seed_max=$1
+seed=$1
 
 num_env_steps=20000000
 lr=7e-4
