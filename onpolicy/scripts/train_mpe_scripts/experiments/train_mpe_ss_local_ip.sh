@@ -26,11 +26,12 @@ communication_interval=$2
 commitment_coef=$3
 
 
-echo "env is ${env}, scenario is ${scenario}, max seed is ${seed_max}"
+echo "env is ${env}, scenario is ${scenario}, seed is ${seed}"
 
 echo "Current experiment: CRIPPO, IP, local obs only"
+
+echo "communication_interval: ${communication_interval}, commitment_coef: ${commitment_coef}"
     
-echo "seed is ${seed}:"
 CUDA_VISIBLE_DEVICES=0 python ../../train/train_mpe.py --env_name ${env} --user_name ${user_name} --use_wandb 0 \
     --scenario_name ${scenario} --num_agents ${num_agents} --num_landmarks ${num_landmarks} --seed ${seed} \
     --n_training_threads ${n_training_threads} --n_rollout_threads ${n_rollout_threads} \
