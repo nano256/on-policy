@@ -5,8 +5,10 @@ from torch import nn
 import torch.nn.functional as F
 
 from gym.spaces import Discrete
+import gymnasium
 
 from onpolicy.algorithms.utils.mlp import MLPBase
+from onpolicy.algorithms.utils.cnn import CNNBase
 from onpolicy.algorithms.utils.act import ACTLayer
 from onpolicy.algorithms.utils.rnn import RNNLayer
 from onpolicy.algorithms.utils.util import init, check
@@ -125,21 +127,30 @@ class IntentionSharingModel(nn.Module):
         self.imagined_traj_len = args.imagined_traj_len
         self.communication_interval = args.communication_interval
         self.group_size = n_agents
+        self.obs_shape = obs_space.shape
 
         self.tpdv = dict(dtype=torch.float32, device=device)
+        self.cnn = None
 
         self.last_imagined_traj = None
+        self.message_size = int(np.product(message_space.shape))
 
-        self.obs_size = int(np.product(obs_space.shape))
-        if isinstance(action_space, Discrete):
+        if len(obs_space.shape) == 1:
+            self.obs_size = int(np.product(obs_space.shape))
+            self.base = MLPBase(
+                args, (self.obs_size + (self.group_size - 1) * self.message_size,)
+            )
+        elif len(obs_space.shape) in (2, 3):
+            self.obs_size = self.hidden_size
+            self.cnn = CNNBase(args, obs_shape=obs_space.shape)
+            self.base = MLPBase(
+                args, (self.hidden_size + (self.group_size - 1) * self.message_size,)
+            )
+
+        if isinstance(action_space, (Discrete, gymnasium.spaces.Discrete)):
             self.action_size = action_space.n
         else:
             self.action_size = int(np.product(action_space.shape))
-        self.message_size = int(np.product(message_space.shape))
-
-        self.base = MLPBase(
-            args, (self.obs_size + (self.group_size - 1) * self.message_size,)
-        )
 
         if self._use_naive_recurrent_policy or self._use_recurrent_policy:
             self.rnn = RNNLayer(
@@ -207,7 +218,7 @@ class IntentionSharingModel(nn.Module):
             available_actions = available_actions.reshape(
                 (-1, available_actions.size(-1))
             )
-        last_obs = last_obs.reshape((-1, last_obs.size(-1)))
+        last_obs = last_obs.reshape((-1, *self.obs_shape))
         masks = masks.reshape((-1, masks.size(-1)))
         rnn_states = rnn_states.reshape((-1, *rnn_states.shape[2:]))
 
@@ -215,6 +226,9 @@ class IntentionSharingModel(nn.Module):
         own_messages, other_messages = self._preprocess_messages(messages)
         own_messages = own_messages.reshape((-1, own_messages.size(-1)))
         other_messages = other_messages.reshape((-1, other_messages.size(-1)))
+
+        if self.cnn is not None:
+            last_obs = self.cnn(last_obs)
 
         last_actions, action_log_probs, rnn_states = self.policy(
             torch.cat((last_obs, other_messages), dim=-1),
@@ -262,7 +276,7 @@ class IntentionSharingModel(nn.Module):
             # Get rid of the actor dimension where we don't need it anymore
             action = action.reshape((action.size(0), -1, action.size(-1)))
             masks = masks.reshape((masks.size(0), -1, masks.size(-1)))
-            obs = obs.reshape((obs.size(0), -1, obs.size(-1)))
+            obs = obs.reshape((obs.size(0), -1, *self.obs_shape))
             if available_actions is not None:
                 available_actions = available_actions.reshape(
                     (available_actions.size(0), -1, available_actions.size(-1))
@@ -282,6 +296,10 @@ class IntentionSharingModel(nn.Module):
             # `rnn_states` contains the initial state of the RNN, no need for slicing
             last_rnn_state = rnn_states.reshape((-1, *rnn_states.shape[2:]))
 
+        if self.cnn is not None:
+            # We have to change the shape to (batch, channel, height, width) to process it but we have (seq, batch, channel, height, width)
+            preprocessed_obs = self.cnn(obs.reshape(-1, *self.obs_shape))
+            obs = preprocessed_obs.reshape(*obs.shape[:2], *preprocessed_obs.shape[1:])
         for ts in range(obs.shape[0]):
             input = torch.cat((obs[ts, ...], last_message), dim=-1)
 
@@ -330,8 +348,8 @@ class IntentionSharingModel(nn.Module):
         else:
             return action_log_probs, dist_entropy
 
-    def policy(self, input, rnn_states=None, masks=None, deterministic=False):
-        x = self.base(input)
+    def policy(self, x, rnn_states=None, masks=None, deterministic=False):
+        x = self.base(x)
         if self._use_naive_recurrent_policy or self._use_recurrent_policy:
             x, rnn_states = self.rnn(x, rnn_states, masks)
 

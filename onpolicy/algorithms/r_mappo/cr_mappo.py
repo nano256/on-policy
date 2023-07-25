@@ -353,27 +353,41 @@ class CR_MAPPO:
             _,
         ) = sample
 
-        intitial_obs = check(obs_batch[:-1]).to(**self.tpdv)
+        initial_obs = check(obs_batch[:-1]).to(**self.tpdv)
         next_obs = check(obs_batch[1:]).to(**self.tpdv)
         actions = check(actions_batch[:-1]).to(
             dtype=torch.int64, device=self.tpdv["device"]
         )
-        one_hot_actions = F.one_hot(actions, self.policy.actor.action_size).squeeze()
+
+        if self.policy.actor.cnn is not None:
+            batch_shape = actions.shape[:-1]
+            with torch.no_grad():
+                initial_obs = self.policy.actor.cnn(
+                    initial_obs.reshape((-1, *initial_obs.shape[len(batch_shape) :]))
+                )
+                initial_obs = initial_obs.reshape(
+                    (*batch_shape, *initial_obs.shape[1:])
+                )
+                next_obs = self.policy.actor.cnn(
+                    next_obs.reshape((-1, *next_obs.shape[len(batch_shape) :]))
+                )
+                next_obs = next_obs.reshape((*batch_shape, *next_obs.shape[1:]))
+        one_hot_actions = F.one_hot(actions, self.policy.actor.action_size).squeeze(-2)
         obs_actions = self._preprocess_actions(one_hot_actions).float()
-        x_obs = torch.cat((intitial_obs, obs_actions), -1)
+        x_obs = torch.cat((initial_obs, obs_actions), -1)
         # Because we use CEL, we need the action labels as classes, not one-hots
         other_actions = self._preprocess_actions(actions, include_own_action=False)
 
         x_obs = x_obs.reshape(-1, x_obs.size(-1))
         next_obs = next_obs.reshape(-1, next_obs.size(-1))
-        intitial_obs = intitial_obs.reshape(-1, intitial_obs.size(-1))
+        initial_obs = initial_obs.reshape(-1, initial_obs.size(-1))
         other_actions = other_actions.reshape(-1)
 
         # Train observation predictor
         self.policy.obs_predictor_optimizer.zero_grad()
         loss_fn = nn.MSELoss()
         # The observation predictor infers the the difference between current and next observation. Therefore we add the current obs to the output.
-        y_pred = self.policy.actor.observation_predictor(x_obs) + intitial_obs
+        y_pred = self.policy.actor.observation_predictor(x_obs) + initial_obs
         obs_pred_loss = loss_fn(y_pred, next_obs)
         obs_pred_loss.backward()
         self.policy.obs_predictor_optimizer.step()
@@ -381,7 +395,7 @@ class CR_MAPPO:
         # Train action predictor
         self.policy.act_predictor_optimizer.zero_grad()
         loss_fn = nn.CrossEntropyLoss()
-        y_pred = self.policy.actor.action_predictor(intitial_obs)
+        y_pred = self.policy.actor.action_predictor(initial_obs)
         y_pred = y_pred.reshape((-1, self.policy.actor.action_size))
         act_pred_loss = loss_fn(y_pred, other_actions)
         act_pred_loss.backward()
