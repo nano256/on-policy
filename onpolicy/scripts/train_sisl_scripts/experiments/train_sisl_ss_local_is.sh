@@ -41,6 +41,6 @@ CUDA_VISIBLE_DEVICES=0 python ../../train/train_sisl.py --env_name ${env} --user
     --pretrain_wm_batch_size ${pretrain_wm_batch_size} --pretrain_wm_n_episodes ${pretrain_wm_n_episodes} \
     --model "is" --algorithm_name "crmappo" --experiment_name "${exp_prefix}_seed_${seed}_comm_int_${communication_interval}_commit_coef_${commitment_coef}" --use_commitment_loss 1 \
     --imagined_traj_len ${imagined_traj_len} --communication_interval ${communication_interval} --use_centralized_V 0 \
-    --use_local_obs 1 --commitment_coef ${commitment_coef}
+    --commitment_coef ${commitment_coef}
 
 

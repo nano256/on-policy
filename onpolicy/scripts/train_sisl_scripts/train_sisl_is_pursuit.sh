@@ -12,16 +12,17 @@ lr=7e-4
 critic_lr=7e-4
 gain=0.01
 ppo_epoch=10
-n_rollout_threads=2
+n_rollout_threads=128
 n_training_threads=1
 num_mini_batch=1
 
-pretrain_wm_n_samples=1000
+pretrain_wm_n_samples=50000
 pretrain_wm_batch_size=500
 pretrain_wm_n_episodes=10
 
 imagined_traj_len=4
 communication_interval=4
+commitment_coef=0.1
 
 echo "Current experiment: CRMAPPO, plain IS"
 for seed in `seq ${seed_max}`;
@@ -34,5 +35,7 @@ do
     --ppo_epoch ${ppo_epoch} --use_ReLU --gain ${gain} --lr ${lr} --critic_lr ${critic_lr} --wandb_name ${exp} \
     --imagined_traj_len ${imagined_traj_len} --communication_interval 1 --pretrain_world_model 1 --pretrain_wm_n_samples ${pretrain_wm_n_samples} \
     --pretrain_wm_batch_size ${pretrain_wm_batch_size} --pretrain_wm_n_episodes ${pretrain_wm_n_episodes}  \
-     --model "is" --algorithm_name "crmappo" --experiment_name "${exp_prefix}_is_plain"
+     --model "is" --algorithm_name "crmappo" --experiment_name "${exp_prefix}_seed_${seed}_comm_int_${communication_interval}_commit_coef_${commitment_coef}" --use_commitment_loss 1 \
+    --imagined_traj_len ${imagined_traj_len} --communication_interval ${communication_interval} \
+    --commitment_coef ${commitment_coef}
 done
