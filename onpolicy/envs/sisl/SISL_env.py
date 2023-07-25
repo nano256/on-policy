@@ -122,8 +122,7 @@ def SISLEnv(args, seed):
         return TransposeObsWrapper(
             PettingZooToOnPolicyWrapper(
                 pursuit_v4.parallel_env(
-                    # max_cycles=args.episode_length,
-                    n_pursuers=args.num_agents
+                    max_cycles=args.episode_length, n_pursuers=args.num_agents
                 ),
                 seed,
             ),
