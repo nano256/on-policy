@@ -8,7 +8,7 @@ episode_length=25
 user_name="miperez"
 seed=$1
 
-num_env_steps=20000000
+num_env_steps=10000000
 lr=7e-4
 critic_lr=7e-4
 gain=0.01
