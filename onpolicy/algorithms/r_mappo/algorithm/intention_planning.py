@@ -40,6 +40,7 @@ class IntentionPlanningModel(nn.Module):
         self.use_plan_for_msg_generation = args.use_plan_for_msg_generation
 
         self.tpdv = dict(dtype=torch.float32, device=device)
+        self.cnn = None
 
         self.last_imagined_traj = None
 
