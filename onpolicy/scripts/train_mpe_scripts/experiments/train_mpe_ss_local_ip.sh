@@ -1,13 +1,17 @@
 #!/bin/sh
+
+seed=${1-0}
+imagined_traj_len=${2-1}
+communication_interval=${2-1}
+commitment_coef=${3-0.0}
+num_agents=${4-3}
+num_landmarks=${5-$num_agents}
+
 env="MPE"
 scenario="simple_spread" 
 exp_prefix="IP_IPPO_local"
-# If $4 arg is given, use it. Otherwise use 3.
-num_landmarks=${4-3}
-num_agents=${4-3}
 episode_length=25
 user_name="miperez"
-seed=$1
 
 num_env_steps=10000000
 lr=7e-4
@@ -21,10 +25,6 @@ num_mini_batch=1
 pretrain_wm_n_samples=10000
 pretrain_wm_batch_size=500
 pretrain_wm_n_episodes=10
-
-imagined_traj_len=$2
-communication_interval=$2
-commitment_coef=$3
 
 
 echo "env is ${env}, scenario is ${scenario}, seed is ${seed}"
