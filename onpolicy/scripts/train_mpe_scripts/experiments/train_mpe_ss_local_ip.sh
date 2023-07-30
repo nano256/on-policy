@@ -2,8 +2,9 @@
 env="MPE"
 scenario="simple_spread" 
 exp_prefix="IP_IPPO_local"
-num_landmarks=3
-num_agents=3
+# If $4 arg is given, use it. Otherwise use 3.
+num_landmarks=${4-3}
+num_agents=${4-3}
 episode_length=25
 user_name="miperez"
 seed=$1
@@ -30,7 +31,7 @@ echo "env is ${env}, scenario is ${scenario}, seed is ${seed}"
 
 echo "Current experiment: CRIPPO, IP, local obs only"
 
-echo "communication_interval: ${communication_interval}, commitment_coef: ${commitment_coef}"
+echo "communication_interval: ${communication_interval}, commitment_coef: ${commitment_coef}, num_agents: ${num_agents}"
     
 CUDA_VISIBLE_DEVICES=0 python ../../train/train_mpe.py --env_name ${env} --user_name ${user_name} --use_wandb 0 \
     --scenario_name ${scenario} --num_agents ${num_agents} --num_landmarks ${num_landmarks} --seed ${seed} \
