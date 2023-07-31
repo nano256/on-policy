@@ -110,6 +110,9 @@ class MPECommunicationRunner(Runner):
                         train_infos["average_episode_rewards"]
                     )
                 )
+                for k in train_infos:
+                    if isinstance(train_infos[k], (torch.Tensor, np.ndarray)):
+                        train_infos[k] = train_infos[k].item()
                 self.log_train(train_infos, total_num_steps)
                 self.log_env(env_infos, total_num_steps)
 
@@ -118,7 +121,7 @@ class MPECommunicationRunner(Runner):
                 self.eval(total_num_steps)
 
     def warmup(self):
-        if self.all_args.model == "is" and self.all_args.pretrain_world_model:
+        if self.all_args.model in ("is", "ip") and self.all_args.pretrain_world_model:
             self.pretrain_world_model(
                 self.trainer.policy,
                 self.envs,
