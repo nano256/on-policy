@@ -48,6 +48,7 @@ class CR_MAPPO:
         self._use_policy_active_masks = args.use_policy_active_masks
         self._use_commitment_loss = args.use_commitment_loss
         self.use_prob_dist_traj = args.use_prob_dist_traj
+        self.intention_aggregation = args.intention_aggregation
 
         assert (
             self._use_popart and self._use_valuenorm
@@ -275,6 +276,10 @@ class CR_MAPPO:
         if self._use_commitment_loss:
             train_info["commitment_loss"] = 0
 
+        if self.intention_aggregation == "encoder":
+            train_info["enc_dec_obs_loss"] = 0
+            train_info["enc_dec_act_loss"] = 0
+
         for _ in range(self.ppo_epoch):
             if self._use_recurrent_policy:
                 data_generator = buffer.recurrent_group_generator(
@@ -305,6 +310,9 @@ class CR_MAPPO:
                 ):
                     wm_act_pred_loss, wm_obs_pred_loss = self.world_model_update(sample)
 
+                if self.intention_aggregation == "encoder":
+                    enc_dec_obs_loss, enc_dec_act_loss = self.enc_dec_update(sample)
+
                 train_info["value_loss"] += value_loss.item()
                 train_info["policy_loss"] += policy_loss.item()
                 train_info["dist_entropy"] += dist_entropy.item()
@@ -318,6 +326,9 @@ class CR_MAPPO:
                     train_info["wm_obs_pred_loss"] += wm_obs_pred_loss.item()
                 if self._use_commitment_loss:
                     train_info["commitment_loss"] += commitment_loss.item()
+                if self.intention_aggregation == "encoder":
+                    train_info["enc_dec_obs_loss"] += enc_dec_obs_loss.item()
+                    train_info["enc_dec_act_loss"] += enc_dec_act_loss.item()
 
         num_updates = self.ppo_epoch * self.num_mini_batch
 
@@ -401,6 +412,50 @@ class CR_MAPPO:
         self.policy.act_predictor_optimizer.step()
 
         return act_pred_loss, obs_pred_loss
+
+    def enc_dec_update(self, sample):
+        (
+            share_obs_batch,
+            obs_batch,
+            rnn_states_batch,
+            rnn_states_critic_batch,
+            actions_batch,
+            value_preds_batch,
+            return_batch,
+            masks_batch,
+            active_masks_batch,
+            old_action_log_probs_batch,
+            adv_targ,
+            available_actions_batch,
+            messages_batch,
+            steps_batch,
+            trajectories_batch,
+        ) = sample
+        # The trajectory batch has following dims: (batch, agent, traj, features)
+        action_size = self.policy.actor.action_size
+        step_size = trajectories_batch.shape[-1]
+        img_traj_len = trajectories_batch.shape[-2]
+        x = trajectories_batch.reshape((-1, step_size))
+        y_obs = F.softmax(torch.Tensor(x[:, :-action_size]), 1)
+        y_act = F.softmax(torch.Tensor(x[:, -action_size:]), 1)
+        x = torch.Tensor(trajectories_batch.reshape((-1, step_size * img_traj_len)))
+
+        optim = self.policy.enc_dec_optimizer
+        obs_loss_fn = nn.MSELoss()
+        act_loss_fn = nn.CrossEntropyLoss()
+
+        optim.zero_grad()
+
+        y_pred = self.policy.actor.encoder_decoder(x)
+        y_pred_obs = y_pred.reshape(-1, step_size)[:, :-action_size]
+        y_pred_act = y_pred.reshape(-1, step_size)[:, -action_size:]
+
+        obs_loss = obs_loss_fn(y_pred_obs, y_obs)
+        act_loss = act_loss_fn(y_pred_act, y_act)
+        loss = obs_loss + act_loss
+        loss.backward()
+        optim.step()
+        return obs_loss, act_loss
 
     def prep_training(self):
         self.policy.actor.train()

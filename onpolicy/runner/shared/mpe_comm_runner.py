@@ -130,6 +130,16 @@ class MPECommunicationRunner(Runner):
                 self.all_args.pretrain_wm_batch_size,
                 self.all_args.pretrain_wm_n_episodes,
             )
+        if self.all_args.intention_aggregation == "encoder":
+            self.pretrain_enc_dec(
+                self.trainer.policy,
+                int(np.product(self.envs.observation_space[0].shape)),
+                self.envs.action_space[0].n,
+                self.all_args.imagined_traj_len,
+                self.all_args.pretrain_wm_n_samples,
+                self.all_args.pretrain_wm_batch_size,
+                self.all_args.pretrain_wm_n_episodes,
+            )
         # reset env
         obs = self.envs.reset()
 
@@ -500,6 +510,40 @@ class MPECommunicationRunner(Runner):
                 optim.step()
                 # print(f"WM obs. predictor loss at step {steps}: {loss:.4f}")
                 self.log_train({"wm_obs_pred_pretrain_loss": loss.item()}, steps)
+                steps += batch_size
+
+    def pretrain_enc_dec(
+        self, policy, obs_size, act_size, traj_len, n_samples, batch_size, n_episodes
+    ):
+        n_batches = n_samples // batch_size
+        model = policy.actor.encoder_decoder
+        optim = policy.enc_dec_optimizer
+        obs_loss_fn = nn.MSELoss()
+        act_loss_fn = nn.CrossEntropyLoss()
+        steps = 0
+
+        step_size = obs_size + act_size
+
+        for _ in range(n_episodes):
+            for _ in range(n_batches):
+                optim.zero_grad()
+                x = torch.rand((batch_size, step_size * traj_len))
+                y_obs = x.reshape(-1, step_size)[:, :obs_size]
+                y_act = F.softmax(x.reshape(-1, step_size)[:, -act_size:], 1)
+
+                y_pred = model(x)
+                y_pred_obs = y_pred.reshape(-1, step_size)[:, :obs_size]
+                y_pred_act = y_pred.reshape(-1, step_size)[:, -act_size:]
+
+                obs_loss = obs_loss_fn(y_pred_obs, y_obs)
+                act_loss = act_loss_fn(y_pred_act, y_act)
+                loss = obs_loss + act_loss
+                loss.backward()
+                optim.step()
+                # print(f"Obs loss at step {steps}: {obs_loss:.4f}")
+                # print(f"Act loss at step {steps}: {act_loss:.4f}")
+                self.log_train({"enc_dec_obs_pretrain_loss": obs_loss.item()}, steps)
+                self.log_train({"enc_dec_act_pretrain_loss": act_loss.item()}, steps)
                 steps += batch_size
 
     def _preprocess_actions(self, actions):

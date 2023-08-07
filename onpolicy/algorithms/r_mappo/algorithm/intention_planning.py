@@ -10,8 +10,8 @@ from onpolicy.algorithms.utils.mlp import MLPBase
 from onpolicy.algorithms.utils.act import ACTLayer
 from onpolicy.algorithms.utils.rnn import RNNLayer
 from onpolicy.algorithms.utils.util import init, check
-
-from onpolicy.algorithms.r_mappo.algorithm.intention_sharing import MLP, AttentionModule
+from onpolicy.algorithms.utils.enc_dec import EncoderDecoderModule
+from onpolicy.algorithms.utils.intention_sharing import MLP, AttentionModule
 
 
 class IntentionPlanningModel(nn.Module):
@@ -97,6 +97,13 @@ class IntentionPlanningModel(nn.Module):
             )
         elif self.intention_aggregation == "mean":
             self.attention_module = lambda t: torch.mean(t, -2)
+        elif self.intention_aggregation == "encoder":
+            self.encoder_decoder = EncoderDecoderModule(
+                (self.obs_size + self.action_size) * self.imagined_traj_len,
+                self.message_size,
+                args,
+            )
+            self.attention_module = self.encoder_decoder.encoder
         else:
             ValueError(
                 f'"{self.intention_aggregation}" is not a valid intention aggregation mode.'
@@ -428,6 +435,8 @@ class IntentionPlanningModel(nn.Module):
             message = self.attention_module(other_messages, trajectory, trajectory)
         elif self.intention_aggregation == "mean":
             message = self.attention_module(trajectory)
+        elif self.intention_aggregation == "encoder":
+            message = self.attention_module(trajectory.reshape(trajectory.size(0), -1))
         return message, trajectory
 
     def _one_hot_actions(self, actions):

@@ -83,6 +83,15 @@ class CR_MAPPOPolicy:
                 eps=self.opti_eps,
                 weight_decay=self.weight_decay,
             )
+
+        if args.intention_aggregation == "encoder":
+            self.enc_dec_optimizer = torch.optim.Adam(
+                self.actor.encoder_decoder.parameters(),
+                lr=self.lr,
+                eps=self.opti_eps,
+                weight_decay=self.weight_decay,
+            )
+
         self.critic = CR_Critic(args, self.share_obs_space, self.device)
 
         self.actor_optimizer = torch.optim.Adam(

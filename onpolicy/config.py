@@ -385,7 +385,7 @@ def get_config():
         "--intention_aggregation",
         type=str,
         default="attention",
-        choices=["attention", "mean"],
+        choices=["attention", "mean", "encoder"],
         help="The method which is used for aggregation of the intentioned steps.",
     )
 
