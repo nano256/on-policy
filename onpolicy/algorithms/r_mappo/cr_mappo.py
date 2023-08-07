@@ -49,6 +49,7 @@ class CR_MAPPO:
         self._use_commitment_loss = args.use_commitment_loss
         self.use_prob_dist_traj = args.use_prob_dist_traj
         self.intention_aggregation = args.intention_aggregation
+        self.use_avg_commitment = args.use_avg_commitment
 
         assert (
             self._use_popart and self._use_valuenorm
@@ -190,7 +191,9 @@ class CR_MAPPO:
 
         if self._use_commitment_loss:
             trajectories_batch = torch.from_numpy(trajectories_batch).to(**self.tpdv)
-            commitment_loss = self.commitment_loss(trajectories_batch, action_logits)
+            commitment_loss = self.commitment_loss(
+                trajectories_batch, action_logits, self.use_avg_commitment
+            )
         else:
             commitment_loss = 0
 
@@ -337,8 +340,17 @@ class CR_MAPPO:
 
         return train_info
 
-    def commitment_loss(self, trajectories_batch, action_logits):
+    def commitment_loss(
+        self, trajectories_batch, action_logits, averaged_commitment=False
+    ):
+        # input tensors having the dims (Seq, Batch, Agent, Features)
         traj_actions = trajectories_batch[..., -self.policy.actor.action_size :]
+        traj_actions = F.softmax(traj_actions, -1)
+        if averaged_commitment:
+            # Average the communicated and happened actions over the sequence
+            traj_actions = torch.mean(traj_actions, 0)
+            action_logits = torch.mean(action_logits, 0)
+
         traj_actions = traj_actions.reshape((-1, traj_actions.size(-1)))
         action_logits = action_logits.reshape((-1, action_logits.size(-1)))
         loss_fn = nn.CrossEntropyLoss()

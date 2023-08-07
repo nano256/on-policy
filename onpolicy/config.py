@@ -445,6 +445,13 @@ def get_config():
         help="If true, save action in imagined trajectory as probability distribution.",
     )
 
+    parser.add_argument(
+        "--use_avg_commitment",
+        action="store_true",
+        default=False,
+        help="If true, make the commitment loss over the average of the communicated actions and the average of the actual actions.",
+    )
+
     # intention planning parameters
     parser.add_argument(
         "--use_plan_for_msg_generation",
