@@ -114,6 +114,26 @@ class ACTLayer(nn.Module):
 
         return action_probs
 
+    def get_logits(self, x, available_actions=None):
+        """
+        Compute action logits from inputs.
+        :param x: (torch.Tensor) input to network.
+        :param available_actions: (torch.Tensor) denotes which actions are available to agent
+                                  (if None, all actions available)
+
+        :return action_logits: (torch.Tensor)
+        """
+        if self.mixed_action or self.multi_discrete:
+            action_logits = []
+            for action_out in self.action_outs:
+                action_logit = action_out(x)
+                action_logits.append(action_logit)
+            action_logits = torch.cat(action_logits, -1)
+        else:
+            action_logits = self.action_out(x, available_actions)
+
+        return action_logits.logits
+
     def evaluate_actions(self, x, action, available_actions=None, active_masks=None):
         """
         Compute log probability and entropy of given actions.

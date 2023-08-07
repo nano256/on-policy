@@ -438,6 +438,13 @@ def get_config():
         help="Coefficient that determines how strongly the commitment loss will be considered.",
     )
 
+    parser.add_argument(
+        "--use_prob_dist_traj",
+        action="store_true",
+        default=False,
+        help="If true, save action in imagined trajectory as probability distribution.",
+    )
+
     # intention planning parameters
     parser.add_argument(
         "--use_plan_for_msg_generation",

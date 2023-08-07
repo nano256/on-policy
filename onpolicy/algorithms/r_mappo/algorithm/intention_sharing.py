@@ -128,6 +128,7 @@ class IntentionSharingModel(nn.Module):
         self.communication_interval = args.communication_interval
         self.group_size = n_agents
         self.obs_shape = obs_space.shape
+        self.use_prob_dist_traj = args.use_prob_dist_traj
 
         self.tpdv = dict(dtype=torch.float32, device=device)
         self.cnn = None
@@ -255,7 +256,7 @@ class IntentionSharingModel(nn.Module):
         steps,
         available_actions=None,
         active_masks=None,
-        get_action_probs=False,
+        get_action_logits=False,
     ):
         obs = check(obs).to(**self.tpdv)
         messages = check(messages).to(**self.tpdv)
@@ -290,7 +291,7 @@ class IntentionSharingModel(nn.Module):
 
             action_log_probs_batch = []
             dist_entropy_batch = []
-            action_probs_batch = []
+            action_logits_batch = []
             _, last_message = self._preprocess_messages(messages)
             last_message = last_message.reshape(-1, last_message.size(-1))
             # `rnn_states` contains the initial state of the RNN, no need for slicing
@@ -316,10 +317,10 @@ class IntentionSharingModel(nn.Module):
             action_log_probs_batch.append(action_log_probs)
             dist_entropy_batch.append(dist_entropy)
 
-            action_probs = self.policy_get_action_probs(
+            action_logits, _ = self.policy_get_action_logits(
                 input, last_rnn_state, masks[ts, ...]
             )
-            action_probs_batch.append(action_probs)
+            action_logits_batch.append(action_logits)
 
             last_actions, _, last_rnn_state = self.policy(
                 input, last_rnn_state, masks[ts, ...]
@@ -341,10 +342,10 @@ class IntentionSharingModel(nn.Module):
             last_message = msg_placeholder
 
         action_log_probs = torch.stack(action_log_probs_batch).reshape((*dims, 1))
-        action_probs = torch.stack(action_probs_batch).reshape((*dims, -1))
+        action_logits = torch.stack(action_logits_batch).reshape((*dims, -1))
         dist_entropy = torch.stack(dist_entropy_batch).mean()
-        if get_action_probs:
-            return action_log_probs, dist_entropy, action_probs
+        if get_action_logits:
+            return action_log_probs, dist_entropy, action_logits
         else:
             return action_log_probs, dist_entropy
 
@@ -365,11 +366,11 @@ class IntentionSharingModel(nn.Module):
 
         return self.act.evaluate_actions(x, action, available_actions, active_masks)
 
-    def policy_get_action_probs(self, input, rnn_states, masks):
+    def policy_get_action_logits(self, input, rnn_states, masks):
         x = self.base(input)
         if self._use_naive_recurrent_policy or self._use_recurrent_policy:
             x, rnn_states = self.rnn(x, rnn_states, masks)
-        return self.act.get_probs(x)
+        return self.act.get_logits(x), rnn_states
 
     def _predict_other_actions(self, obs):
         other_actions_raw = self.action_predictor(obs)
@@ -394,12 +395,21 @@ class IntentionSharingModel(nn.Module):
             # The observation predictor soes only predict the difference between the next and current observations, hence we add the last ones to it.
             + last_obs
         )
-        predicted_actions, _, rnn_states = self.policy(
-            torch.cat((predicted_obs, other_messages), dim=-1),
-            rnn_states,
-            masks,
-            deterministic,
-        )
+
+        input = torch.cat((predicted_obs, other_messages), dim=-1)
+        if self.use_prob_dist_traj:
+            predicted_actions, rnn_states = self.policy_get_action_logits(
+                input,
+                rnn_states,
+                masks,
+            )
+        else:
+            predicted_actions, _, rnn_states = self.policy(
+                input,
+                rnn_states,
+                masks,
+                deterministic,
+            )
         return predicted_obs, predicted_actions, rnn_states
 
     def _message_generation_network(
@@ -427,7 +437,8 @@ class IntentionSharingModel(nn.Module):
                 masks,
                 deterministic=False,
             )
-            last_actions = self._one_hot_actions(last_actions)
+            if not self.use_prob_dist_traj:
+                last_actions = self._one_hot_actions(last_actions)
             trajectory.append(torch.cat((last_obs, last_actions), dim=-1))
         trajectory = torch.stack(trajectory).to(**self.tpdv)
         # We have to transpose the tensor to put the batch dim as the first and traj dim as second last

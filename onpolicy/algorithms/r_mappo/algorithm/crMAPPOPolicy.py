@@ -185,7 +185,7 @@ class CR_MAPPOPolicy:
         steps,
         available_actions=None,
         active_masks=None,
-        get_action_probs=False,
+        get_action_logits=False,
     ):
         """
         Get action logprobs / entropy and value function predictions for actor update.
@@ -212,16 +212,16 @@ class CR_MAPPOPolicy:
             steps,
             available_actions,
             active_masks,
-            get_action_probs,
+            get_action_logits,
         )
 
-        if get_action_probs:
+        if get_action_logits:
             action_log_probs, dist_entropy, action_probs = actor_batch
         else:
             action_log_probs, dist_entropy = actor_batch
 
         values, _ = self.critic(cent_obs, rnn_states_critic, masks)
-        if get_action_probs:
+        if get_action_logits:
             return values, action_log_probs, dist_entropy, action_probs
         else:
             return values, action_log_probs, dist_entropy

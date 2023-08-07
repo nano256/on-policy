@@ -47,6 +47,7 @@ class CR_MAPPO:
         self._use_value_active_masks = args.use_value_active_masks
         self._use_policy_active_masks = args.use_policy_active_masks
         self._use_commitment_loss = args.use_commitment_loss
+        self.use_prob_dist_traj = args.use_prob_dist_traj
 
         assert (
             self._use_popart and self._use_valuenorm
@@ -155,11 +156,11 @@ class CR_MAPPO:
             steps_batch,
             available_actions_batch,
             active_masks_batch,
-            get_action_probs=True if self._use_commitment_loss else False,
+            get_action_logits=True if self._use_commitment_loss else False,
         )
 
         if self._use_commitment_loss:
-            (values, action_log_probs, dist_entropy, action_probs) = eval_batch
+            (values, action_log_probs, dist_entropy, action_logits) = eval_batch
         else:
             (values, action_log_probs, dist_entropy) = eval_batch
 
@@ -188,7 +189,7 @@ class CR_MAPPO:
 
         if self._use_commitment_loss:
             trajectories_batch = torch.from_numpy(trajectories_batch).to(**self.tpdv)
-            commitment_loss = self.commitment_loss(trajectories_batch, action_probs)
+            commitment_loss = self.commitment_loss(trajectories_batch, action_logits)
         else:
             commitment_loss = 0
 
@@ -325,14 +326,12 @@ class CR_MAPPO:
 
         return train_info
 
-    def commitment_loss(self, trajectories_batch, action_probs):
+    def commitment_loss(self, trajectories_batch, action_logits):
         traj_actions = trajectories_batch[..., -self.policy.actor.action_size :]
-        traj_actions = torch.argmax(traj_actions, -1)
-        traj_actions = traj_actions.reshape((-1))
-        action_probs = torch.log(action_probs)
-        action_probs = action_probs.reshape((-1, action_probs.size(-1)))
-        loss_fn = nn.NLLLoss()
-        return loss_fn(action_probs, traj_actions)
+        traj_actions = traj_actions.reshape((-1, traj_actions.size(-1)))
+        action_logits = action_logits.reshape((-1, action_logits.size(-1)))
+        loss_fn = nn.CrossEntropyLoss()
+        return loss_fn(action_logits, traj_actions)
 
     def world_model_update(self, sample):
         (
