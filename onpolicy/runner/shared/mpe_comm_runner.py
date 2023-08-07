@@ -527,7 +527,7 @@ class MPECommunicationRunner(Runner):
         for _ in range(n_episodes):
             for _ in range(n_batches):
                 optim.zero_grad()
-                x = torch.rand((batch_size, step_size * traj_len))
+                x = torch.rand((batch_size, step_size * traj_len)).to(self.device)
                 y_obs = x.reshape(-1, step_size)[:, :obs_size]
                 y_act = F.softmax(x.reshape(-1, step_size)[:, -act_size:], 1)
 

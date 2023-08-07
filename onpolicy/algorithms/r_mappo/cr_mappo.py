@@ -50,6 +50,7 @@ class CR_MAPPO:
         self.use_prob_dist_traj = args.use_prob_dist_traj
         self.intention_aggregation = args.intention_aggregation
         self.use_avg_commitment = args.use_avg_commitment
+        self.imagined_traj_len = args.imagined_traj_len
 
         assert (
             self._use_popart and self._use_valuenorm
@@ -443,14 +444,17 @@ class CR_MAPPO:
             steps_batch,
             trajectories_batch,
         ) = sample
-        # The trajectory batch has following dims: (batch, agent, traj, features)
+        # The trajectory batch has following dims: (seq, batch, agent, features)
         action_size = self.policy.actor.action_size
         step_size = trajectories_batch.shape[-1]
-        img_traj_len = trajectories_batch.shape[-2]
+
         x = trajectories_batch.reshape((-1, step_size))
-        y_obs = F.softmax(torch.Tensor(x[:, :-action_size]), 1)
-        y_act = F.softmax(torch.Tensor(x[:, -action_size:]), 1)
-        x = torch.Tensor(trajectories_batch.reshape((-1, step_size * img_traj_len)))
+        # Gett rid of left over steps
+        end_idx = self.imagined_traj_len * (x.shape[0] // self.imagined_traj_len)
+        x = x[:end_idx,:]
+        y_obs = F.softmax(torch.Tensor(x[:, :-action_size]), 1).to(self.device)
+        y_act = F.softmax(torch.Tensor(x[:, -action_size:]), 1).to(self.device)
+        x = torch.Tensor(trajectories_batch.reshape((-1, step_size * self.imagined_traj_len))).to(self.device)
 
         optim = self.policy.enc_dec_optimizer
         obs_loss_fn = nn.MSELoss()
