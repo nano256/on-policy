@@ -271,6 +271,7 @@ class CR_Critic(nn.Module):
         init_method = [nn.init.xavier_uniform_, nn.init.orthogonal_][
             self._use_orthogonal
         ]
+        self.cent_obs_shape = cent_obs_space.shape
 
         cent_obs_shape = get_shape_from_obs_space(cent_obs_space)
         base = CNNBase if len(cent_obs_shape) == 3 else MLPBase
@@ -310,7 +311,7 @@ class CR_Critic(nn.Module):
 
         dims = masks.shape[:-1]
         rnn_dims = rnn_states.shape
-        cent_obs = cent_obs.reshape((-1, cent_obs.size(-1)))
+        cent_obs = cent_obs.reshape((-1, *self.cent_obs_shape))
         rnn_states = rnn_states.reshape((-1, *rnn_states.shape[2:]))
         masks = masks.reshape((-1, masks.size(-1)))
 

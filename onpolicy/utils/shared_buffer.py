@@ -760,15 +760,11 @@ class SharedReplayBuffer(object):
             for i in range(num_mini_batch)
         ]
 
-        if len(self.share_obs.shape) > 4:
-            NotImplementedError(
-                "Support for observations with more that 4 dimensions not implemented."
-            )
-        else:
-            share_obs = self.share_obs[:-1]
-            obs = self.obs[:-1]
-            if self.messages is not None:
-                messages = self.messages[:-1]
+       
+        share_obs = self.share_obs[:-1]
+        obs = self.obs[:-1]
+        if self.messages is not None:
+            messages = self.messages[:-1]
 
         actions = self.actions
         action_log_probs = self.action_log_probs
