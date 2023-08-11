@@ -452,9 +452,9 @@ class CR_MAPPO:
         # Gett rid of left over steps
         end_idx = self.imagined_traj_len * (x.shape[0] // self.imagined_traj_len)
         x = x[:end_idx,:]
-        y_obs = F.softmax(torch.Tensor(x[:, :-action_size]), 1).to(self.device)
+        y_obs = torch.Tensor(x[:, :-action_size]).to(self.device)
         y_act = F.softmax(torch.Tensor(x[:, -action_size:]), 1).to(self.device)
-        x = torch.Tensor(trajectories_batch.reshape((-1, step_size * self.imagined_traj_len))).to(self.device)
+        x = torch.Tensor(x.reshape((-1, step_size * self.imagined_traj_len))).to(self.device)
 
         optim = self.policy.enc_dec_optimizer
         obs_loss_fn = nn.MSELoss()
